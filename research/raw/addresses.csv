@@ -1,0 +1,490 @@
+Address,Set Alignment (Bytes),Type,Name,Example Value,Notes
+0x02000054,4,Gold,Gold,01000000,Total Gold owned
+0x02000098,2,Item,Medical Herb,0062,Total number of item in Item Box
+0x0200009C,2,Item,Healing Seed,0062,Total number of item in Item Box
+0x020000A0,2,Item,Antidote,0062,Total number of item in Item Box
+0x020000A4,2,Item,Angel Wing,0062,Total number of item in Item Box
+0x020000A8,2,Item,Shower Cure,0062,Total number of item in Item Box
+0x020000AC,2,Item,Orb of Light,0062,Total number of item in Item Box
+0x020000B0,2,Item,Moonstone,0062,Total number of item in Item Box
+0x020000B4,2,Item,Lunar Dew,0062,Total number of item in Item Box
+0x020000B8,2,Item,Domingo Egg,0062,Total number of item in Item Box
+0x020000BC,2,Item,Blaze Bomb,0062,Total number of item in Item Box
+0x020000C0,2,Item,Teeny Bikini,0062,Total number of item in Item Box
+0x020000C4,2,Item,Daring Dress,0062,Total number of item in Item Box
+0x020000C8,2,Item,Maid Uniform,0062,Total number of item in Item Box
+0x020000CC,2,Item,Kenji,0062,Total number of item in Item Box
+0x020000D0,2,Item,Rifle,0062,Total number of item in Item Box
+0x020000D4,2,Item,Papa Doll,0062,Total number of item in Item Box
+0x020000D8,2,Item,Youji,0062,Total number of item in Item Box
+0x020000DC,2,Item,Taboo Box,0062,Total number of item in Item Box
+0x020000E0,2,Item,Power Wine,0062,Total number of item in Item Box
+0x020000E4,2,Item,DEF Potion,0062,Total number of item in Item Box
+0x020000E8,2,Item,Quik Chicken,0062,Total number of item in Item Box
+0x020000EC,2,Item,Turbo Pepper,0062,Total number of item in Item Box
+0x020000F0,2,Item,Life Loaf,0062,Total number of item in Item Box
+0x020000F4,2,Item,Power Ring,0062,Total number of item in Item Box
+0x020000F8,2,Item,Shield Ring,0062,Total number of item in Item Box
+0x020000FC,2,Item,Speed Ring,0062,Total number of item in Item Box
+0x02000100,2,Item,Agility Ring,0062,Total number of item in Item Box
+0x02000104,2,Item,White Ring,0062,Total number of item in Item Box
+0x02000108,2,Item,Black Ring,0062,Total number of item in Item Box
+0x0200010C,2,Item,Evil Ring,0062,Total number of item in Item Box
+0x02000110,2,Item,Yogurt Ring,0062,Total number of item in Item Box
+0x02000114,2,Item,Steel Ring,0062,Total number of item in Item Box
+0x02000118,2,Item,Silver Ring,0062,Total number of item in Item Box
+0x0200011C,2,Item,Gold Ring,0062,Total number of item in Item Box
+0x02000120,2,Item,Evade Ring,0062,Total number of item in Item Box
+0x02000124,2,Item,Wind Ring,0062,Total number of item in Item Box
+0x02000128,2,Item,Tornado Ring,0062,Total number of item in Item Box
+0x0200012C,2,Item,Charm Ring,0062,Total number of item in Item Box
+0x02000130,2,Item,Prayer Ring,0062,Total number of item in Item Box
+0x02000134,2,Item,Seal Ring,0062,Total number of item in Item Box
+0x02000138,2,Item,Healing Ring,0062,Total number of item in Item Box
+0x0200013C,2,Item,Rousing Ring,0062,Total number of item in Item Box
+0x02000140,2,Item,Holy Ring,0062,Total number of item in Item Box
+0x02000144,2,Item,Sniper Ring,0062,Total number of item in Item Box
+0x02000148,2,Item,Repel Ring,0062,Total number of item in Item Box
+0x0200014C,2,Item,Counter Ring,0062,Total number of item in Item Box
+0x02000150,2,Item,Short Sword,0062,Total number of item in Item Box
+0x02000154,2,Item,Middle Sword,0062,Total number of item in Item Box
+0x02000158,2,Item,Long Sword,0062,Total number of item in Item Box
+0x0200015C,2,Item,Steel Sword,0062,Total number of item in Item Box
+0x02000160,2,Item,Broad Sword,0062,Total number of item in Item Box
+0x02000164,2,Item,Doom Blade,0062,Total number of item in Item Box
+0x02000168,2,Item,Katana,0062,Total number of item in Item Box
+0x0200016C,2,Item,Light Saber,0062,Total number of item in Item Box
+0x02000170,2,Item,Dark Saber,0062,Total number of item in Item Box
+0x02000174,2,Item,Chaosbreaker,0062,Total number of item in Item Box
+0x02000178,2,Item,Demibuster,0062,Total number of item in Item Box
+0x0200017C,2,Item,Mermanbuster,0062,Total number of item in Item Box
+0x02000180,2,Item,Soulbuster,0062,Total number of item in Item Box
+0x02000184,2,Item,Wooden Arrow,0062,Total number of item in Item Box
+0x02000188,2,Item,Steel Arrow,0062,Total number of item in Item Box
+0x0200018C,2,Item,Elven Arrow,0062,Total number of item in Item Box
+0x02000190,2,Item,Armor Arrow,0062,Total number of item in Item Box
+0x02000194,2,Item,Buster Shot,0062,Total number of item in Item Box
+0x02000198,2,Item,Duelist,0062,Total number of item in Item Box
+0x0200019C,2,Item,Destroyer,0062,Total number of item in Item Box
+0x020001A0,2,Item,Sniper,0062,Total number of item in Item Box
+0x020001A4,2,Item,Bronze Lance,0062,Total number of item in Item Box
+0x020001A8,2,Item,Steel Lance,0062,Total number of item in Item Box
+0x020001AC,2,Item,Chrome Lance,0062,Total number of item in Item Box
+0x020001B0,2,Item,Halberd,0062,Total number of item in Item Box
+0x020001B4,2,Item,Devil Lance,0062,Total number of item in Item Box
+0x020001B8,2,Item,Power Lance,0062,Total number of item in Item Box
+0x020001BC,2,Item,Ogre Slayer,0062,Total number of item in Item Box
+0x020001C0,2,Item,Spear,0062,Total number of item in Item Box
+0x020001C4,2,Item,Power Spear,0062,Total number of item in Item Box
+0x020001C8,2,Item,Valkyrie,0062,Total number of item in Item Box
+0x020001CC,2,Item,Elf Slayer,0062,Total number of item in Item Box
+0x020001D0,2,Item,Hand Axe,0062,Total number of item in Item Box
+0x020001D4,2,Item,Middle Axe,0062,Total number of item in Item Box
+0x020001D8,2,Item,Battle Axe,0062,Total number of item in Item Box
+0x020001DC,2,Item,Heat Axe,0062,Total number of item in Item Box
+0x020001E0,2,Item,Great Axe,0062,Total number of item in Item Box
+0x020001E4,2,Item,Atlas,0062,Total number of item in Item Box
+0x020001E8,2,Item,Jagged Flash,0062,Total number of item in Item Box
+0x020001EC,2,Item,Landslide,0062,Total number of item in Item Box
+0x020001F0,2,Item,Raging Drum,0062,Total number of item in Item Box
+0x020001F4,2,Item,Wooden Staff,0062,Total number of item in Item Box
+0x020001F8,2,Item,Power Staff,0062,Total number of item in Item Box
+0x020001FC,2,Item,Guard Staff,0062,Total number of item in Item Box
+0x02000200,2,Item,Holy Staff,0062,Total number of item in Item Box
+0x02000204,2,Item,Demon Rod,0062,Total number of item in Item Box
+0x02000208,2,Item,Voodoo Staff,0062,Total number of item in Item Box
+0x0200020C,2,Item,Doll Hater,0062,Total number of item in Item Box
+0x02000210,2,Item,Zombie Charm,0062,Total number of item in Item Box
+0x02000214,2,Item,Paralyzer,0062,Total number of item in Item Box
+0x02000218,2,Item,Mace,0062,Total number of item in Item Box
+0x0200021C,2,Item,Heavy Mace,0062,Total number of item in Item Box
+0x02000220,2,Item,Holy Mace,0062,Total number of item in Item Box
+0x02000224,2,Item,Miracle Mace,0062,Total number of item in Item Box
+0x02000228,2,Item,Dragonslayer,0062,Total number of item in Item Box
+0x0200022C,2,Item,Card,0062,Total number of item in Item Box
+0x02000230,2,Item,Used Card,0062,Total number of item in Item Box
+0x02000274,2,Stat,Max Attack Stat,0063,Set value
+0x02000278,2,Stat,Max Defend Stat,0063,Set value
+0x0200027C,2,Stat,Max Agility Stat,0063,Set value
+0x02000280,2,Stat,Max Movement Stat,003F,Set value
+0x02000288,2,Stat,Max Magic Res Stat,0063,Set value
+0x020002C0,2,Stat,Max Current HP,0063,Set value
+0x020002C4,2,Stat,Max Max HP,0063,Set value
+0x020002C8,2,Stat,Max Current MP,0063,Set value
+0x020002CC,2,Stat,Max Max MP,0063,Set value
+0x02000370,2,Stat,Max Ex Stat,0063,Set value
+0x020003BC,2,Stat,Mae Attack Stat,0063,Set value
+0x020003C0,2,Stat,Mae Defend Stat,0063,Set value
+0x020003C4,2,Stat,Mae Agility Stat,0063,Set value
+0x020003C8,2,Stat,Mae Movement Stat,003F,Set value
+0x020003D0,2,Stat,Mae Magic Res Stat,0063,Set value
+0x02000408,2,Stat,Mae Current HP,0063,Set value
+0x0200040C,2,Stat,Mae Max HP,0063,Set value
+0x02000410,2,Stat,Mae Current MP,0063,Set value
+0x02000414,2,Stat,Mae Max MP,0063,Set value
+0x020004B8,2,Stat,Mae Ex Stat,0063,Set value
+0x02000504,2,Stat,Pelle Attack Stat,0063,Set value
+0x02000508,2,Stat,Pelle Defend Stat,0063,Set value
+0x0200050C,2,Stat,Pelle Agility Stat,0063,Set value
+0x02000510,2,Stat,Pelle Movement Stat,003F,Set value
+0x02000518,2,Stat,Pelle Magic Res Stat,0063,Set value
+0x02000550,2,Stat,Pelle Current HP,0063,Set value
+0x02000554,2,Stat,Pelle Max HP,0063,Set value
+0x02000558,2,Stat,Pelle Current MP,0063,Set value
+0x0200055C,2,Stat,Pelle Max MP,0063,Set value
+0x02000600,2,Stat,Pelle Ex Stat,0063,Set value
+0x0200064C,2,Stat,Ken Attack Stat,0063,Set value
+0x02000650,2,Stat,Ken Defend Stat,0063,Set value
+0x02000654,2,Stat,Ken Agility Stat,0063,Set value
+0x02000658,2,Stat,Ken Movement Stat,003F,Set value
+0x02000660,2,Stat,Ken Magic Res Stat,0063,Set value
+0x02000698,2,Stat,Ken Current HP,0063,Set value
+0x0200069C,2,Stat,Ken Max HP,0063,Set value
+0x020006A0,2,Stat,Ken Current MP,0063,Set value
+0x020006A4,2,Stat,Ken Max MP,0063,Set value
+0x02000748,2,Stat,Ken Ex Stat,0063,Set value
+0x02000794,2,Stat,Vankar Attack Stat,0063,Set value
+0x02000798,2,Stat,Vankar Defend Stat,0063,Set value
+0x0200079C,2,Stat,Vankar Agility Stat,0063,Set value
+0x020007A0,2,Stat,Vankar Movement Stat,003F,Set value
+0x020007A8,2,Stat,Vankar Magic Res Stat,0063,Set value
+0x020007E0,2,Stat,Vankar Current HP,0063,Set value
+0x020007E4,2,Stat,Vankar Max HP,0063,Set value
+0x020007E8,2,Stat,Vankar Current MP,0063,Set value
+0x020007EC,2,Stat,Vankar Max MP,0063,Set value
+0x02000890,2,Stat,Vankar Ex Stat,0063,Set value
+0x020008DC,2,Stat,Earnest Attack Stat,0063,Set value
+0x020008E0,2,Stat,Earnest Defend Stat,0063,Set value
+0x020008E4,2,Stat,Earnest Agility Stat,0063,Set value
+0x020008E8,2,Stat,Earnest Movement Stat,003F,Set value
+0x020008F0,2,Stat,Earnest Magic Res Stat,0063,Set value
+0x02000928,2,Stat,Earnest Current HP,0063,Set value
+0x0200092C,2,Stat,Earnest Max HP,0063,Set value
+0x02000930,2,Stat,Earnest Current MP,0063,Set value
+0x02000934,2,Stat,Earnest Max MP,0063,Set value
+0x020009D8,2,Stat,Earnest Ex Stat,0063,Set value
+0x02000A24,2,Stat,Arthur Attack Stat,0063,Set value
+0x02000A28,2,Stat,Arthur Defend Stat,0063,Set value
+0x02000A2C,2,Stat,Arthur Agility Stat,0063,Set value
+0x02000A30,2,Stat,Arthur Movement Stat,003F,Set value
+0x02000A38,2,Stat,Arthur Magic Res Stat,0063,Set value
+0x02000A70,2,Stat,Arthur Current HP,0063,Set value
+0x02000A74,2,Stat,Arthur Max HP,0063,Set value
+0x02000A78,2,Stat,Arthur Current MP,0063,Set value
+0x02000A7C,2,Stat,Arthur Max MP,0063,Set value
+0x02000B20,2,Stat,Arthur Ex Stat,0063,Set value
+0x02000B6C,2,Stat,Gort Attack Stat,0063,Set value
+0x02000B70,2,Stat,Gort Defend Stat,0063,Set value
+0x02000B74,2,Stat,Gort Agility Stat,0063,Set value
+0x02000B78,2,Stat,Gort Movement Stat,003F,Set value
+0x02000B80,2,Stat,Gort Magic Res Stat,0063,Set value
+0x02000BB8,2,Stat,Gort Current HP,0063,Set value
+0x02000BBC,2,Stat,Gort Max HP,0063,Set value
+0x02000BC0,2,Stat,Gort Current MP,0063,Set value
+0x02000BC4,2,Stat,Gort Max MP,0063,Set value
+0x02000C68,2,Stat,Gort Ex Stat,0063,Set value
+0x02000CB4,2,Stat,Luke Attack Stat,0063,Set value
+0x02000CB8,2,Stat,Luke Defend Stat,0063,Set value
+0x02000CBC,2,Stat,Luke Agility Stat,0063,Set value
+0x02000CC0,2,Stat,Luke Movement Stat,003F,Set value
+0x02000CC8,2,Stat,Luke Magic Res Stat,0063,Set value
+0x02000D00,2,Stat,Luke Current HP,0063,Set value
+0x02000D04,2,Stat,Luke Max HP,0063,Set value
+0x02000D08,2,Stat,Luke Current MP,0063,Set value
+0x02000D0C,2,Stat,Luke Max MP,0063,Set value
+0x02000DB0,2,Stat,Luke Ex Stat,0063,Set value
+0x02000DFC,2,Stat,Guntz Attack Stat,0063,Set value
+0x02000E00,2,Stat,Guntz Defend Stat,0063,Set value
+0x02000E04,2,Stat,Guntz Agility Stat,0063,Set value
+0x02000E08,2,Stat,Guntz Movement Stat,003F,Set value
+0x02000E10,2,Stat,Guntz Magic Res Stat,0063,Set value
+0x02000E48,2,Stat,Guntz Current HP,0063,Set value
+0x02000E4C,2,Stat,Guntz Max HP,0063,Set value
+0x02000E50,2,Stat,Guntz Current MP,0063,Set value
+0x02000E54,2,Stat,Guntz Max MP,0063,Set value
+0x02000EF8,2,Stat,Guntz Ex Stat,0063,Set value
+0x02000F44,2,Stat,Anri Attack Stat,0063,Set value
+0x02000F48,2,Stat,Anri Defend Stat,0063,Set value
+0x02000F4C,2,Stat,Anri Agility Stat,0063,Set value
+0x02000F50,2,Stat,Anri Movement Stat,003F,Set value
+0x02000F58,2,Stat,Anri Magic Res Stat,0063,Set value
+0x02000F90,2,Stat,Anri Current HP,0063,Set value
+0x02000F94,2,Stat,Anri Max HP,0063,Set value
+0x02000F98,2,Stat,Anri Current MP,0063,Set value
+0x02000F9C,2,Stat,Anri Max MP,0063,Set value
+0x02001040,2,Stat,Anri Ex Stat,0063,Set value
+0x0200108C,2,Stat,Alef Attack Stat,0063,Set value
+0x02001090,2,Stat,Alef Defend Stat,0063,Set value
+0x02001094,2,Stat,Alef Agility Stat,0063,Set value
+0x02001098,2,Stat,Alef Movement Stat,003F,Set value
+0x020010A0,2,Stat,Alef Magic Res Stat,0063,Set value
+0x020010D8,2,Stat,Alef Current HP,0063,Set value
+0x020010DC,2,Stat,Alef Max HP,0063,Set value
+0x020010E0,2,Stat,Alef Current MP,0063,Set value
+0x020010E4,2,Stat,Alef Max MP,0063,Set value
+0x02001188,2,Stat,Alef Ex Stat,0063,Set value
+0x020011D4,2,Stat,Tao Attack Stat,0063,Set value
+0x020011D8,2,Stat,Tao Defend Stat,0063,Set value
+0x020011DC,2,Stat,Tao Agility Stat,0063,Set value
+0x020011E0,2,Stat,Tao Movement Stat,003F,Set value
+0x020011E8,2,Stat,Tao Magic Res Stat,0063,Set value
+0x02001220,2,Stat,Tao Current HP,0063,Set value
+0x02001224,2,Stat,Tao Max HP,0063,Set value
+0x02001228,2,Stat,Tao Current MP,0063,Set value
+0x0200122C,2,Stat,Tao Max MP,0063,Set value
+0x020012D0,2,Stat,Tao Ex Stat,0063,Set value
+0x0200131C,2,Stat,Domingo Attack Stat,0063,Set value
+0x02001320,2,Stat,Domingo Defend Stat,0063,Set value
+0x02001324,2,Stat,Domingo Agility Stat,0063,Set value
+0x02001328,2,Stat,Domingo Movement Stat,003F,Set value
+0x02001330,2,Stat,Domingo Magic Res Stat,0063,Set value
+0x02001368,2,Stat,Domingo Current HP,0063,Set value
+0x0200136C,2,Stat,Domingo Max HP,0063,Set value
+0x02001370,2,Stat,Domingo Current MP,0063,Set value
+0x02001374,2,Stat,Domingo Max MP,0063,Set value
+0x02001418,2,Stat,Domingo Ex Stat,0063,Set value
+0x02001464,2,Stat,Lowe Attack Stat,0063,Set value
+0x02001468,2,Stat,Lowe Defend Stat,0063,Set value
+0x0200146C,2,Stat,Lowe Agility Stat,0063,Set value
+0x02001470,2,Stat,Lowe Movement Stat,003F,Set value
+0x02001478,2,Stat,Lowe Magic Res Stat,0063,Set value
+0x020014B0,2,Stat,Lowe Current HP,0063,Set value
+0x020014B4,2,Stat,Lowe Max HP,0063,Set value
+0x020014B8,2,Stat,Lowe Current MP,0063,Set value
+0x020014BC,2,Stat,Lowe Max MP,0063,Set value
+0x02001560,2,Stat,Lowe Ex Stat,0063,Set value
+0x020015AC,2,Stat,Khris Attack Stat,0063,Set value
+0x020015B0,2,Stat,Khris Defend Stat,0063,Set value
+0x020015B4,2,Stat,Khris Agility Stat,0063,Set value
+0x020015B8,2,Stat,Khris Movement Stat,003F,Set value
+0x020015C0,2,Stat,Khris Magic Res Stat,0063,Set value
+0x020015F8,2,Stat,Khris Current HP,0063,Set value
+0x020015FC,2,Stat,Khris Max HP,0063,Set value
+0x02001600,2,Stat,Khris Current MP,0063,Set value
+0x02001604,2,Stat,Khris Max MP,0063,Set value
+0x020016A8,2,Stat,Khris Ex Stat,0063,Set value
+0x020016F4,2,Stat,Torasu Attack Stat,0063,Set value
+0x020016F8,2,Stat,Torasu Defend Stat,0063,Set value
+0x020016FC,2,Stat,Torasu Agility Stat,0063,Set value
+0x02001700,2,Stat,Torasu Movement Stat,003F,Set value
+0x02001708,2,Stat,Torasu Magic Res Stat,0063,Set value
+0x02001740,2,Stat,Torasu Current HP,0063,Set value
+0x02001744,2,Stat,Torasu Max HP,0063,Set value
+0x02001748,2,Stat,Torasu Current MP,0063,Set value
+0x0200174C,2,Stat,Torasu Max MP,0063,Set value
+0x020017F0,2,Stat,Torasu Ex Stat,0063,Set value
+0x0200183C,2,Stat,Gong Attack Stat,0063,Set value
+0x02001840,2,Stat,Gong Defend Stat,0063,Set value
+0x02001844,2,Stat,Gong Agility Stat,0063,Set value
+0x02001848,2,Stat,Gong Movement Stat,003F,Set value
+0x02001850,2,Stat,Gong Magic Res Stat,0063,Set value
+0x02001888,2,Stat,Gong Current HP,0063,Set value
+0x0200188C,2,Stat,Gong Max HP,0063,Set value
+0x02001890,2,Stat,Gong Current MP,0063,Set value
+0x02001894,2,Stat,Gong Max MP,0063,Set value
+0x02001938,2,Stat,Gong Ex Stat,0063,Set value
+0x02001984,2,Stat,Diane Attack Stat,0063,Set value
+0x02001988,2,Stat,Diane Defend Stat,0063,Set value
+0x0200198C,2,Stat,Diane Agility Stat,0063,Set value
+0x02001990,2,Stat,Diane Movement Stat,003F,Set value
+0x02001998,2,Stat,Diane Magic Res Stat,0063,Set value
+0x020019D0,2,Stat,Diane Current HP,0063,Set value
+0x020019D4,2,Stat,Diane Max HP,0063,Set value
+0x020019D8,2,Stat,Diane Current MP,0063,Set value
+0x020019DC,2,Stat,Diane Max MP,0063,Set value
+0x02001A80,2,Stat,Diane Ex Stat,0063,Set value
+0x02001ACC,2,Stat,Hans Attack Stat,0063,Set value
+0x02001AD0,2,Stat,Hans Defend Stat,0063,Set value
+0x02001AD4,2,Stat,Hans Agility Stat,0063,Set value
+0x02001AD8,2,Stat,Hans Movement Stat,003F,Set value
+0x02001AE0,2,Stat,Hans Magic Res Stat,0063,Set value
+0x02001B18,2,Stat,Hans Current HP,0063,Set value
+0x02001B1C,2,Stat,Hans Max HP,0063,Set value
+0x02001B20,2,Stat,Hans Current MP,0063,Set value
+0x02001B24,2,Stat,Hans Max MP,0063,Set value
+0x02001BC8,2,Stat,Hans Ex Stat,0063,Set value
+0x02001C14,2,Stat,Lyle Attack Stat,0063,Set value
+0x02001C18,2,Stat,Lyle Defend Stat,0063,Set value
+0x02001C1C,2,Stat,Lyle Agility Stat,0063,Set value
+0x02001C20,2,Stat,Lyle Movement Stat,003F,Set value
+0x02001C28,2,Stat,Lyle Magic Res Stat,0063,Set value
+0x02001C60,2,Stat,Lyle Current HP,0063,Set value
+0x02001C64,2,Stat,Lyle Max HP,0063,Set value
+0x02001C68,2,Stat,Lyle Current MP,0063,Set value
+0x02001C6C,2,Stat,Lyle Max MP,0063,Set value
+0x02001D10,2,Stat,Lyle Ex Stat,0063,Set value
+0x02001D5C,2,Stat,Amon Attack Stat,0063,Set value
+0x02001D60,2,Stat,Amon Defend Stat,0063,Set value
+0x02001D64,2,Stat,Amon Agility Stat,0063,Set value
+0x02001D68,2,Stat,Amon Movement Stat,003F,Set value
+0x02001D70,2,Stat,Amon Magic Res Stat,0063,Set value
+0x02001DA8,2,Stat,Amon Current HP,0063,Set value
+0x02001DAC,2,Stat,Amon Max HP,0063,Set value
+0x02001DB0,2,Stat,Amon Current MP,0063,Set value
+0x02001DB4,2,Stat,Amon Max MP,0063,Set value
+0x02001E58,2,Stat,Amon Ex Stat,0063,Set value
+0x02001EA4,2,Stat,Balbaroy Attack Stat,0063,Set value
+0x02001EA8,2,Stat,Balbaroy Defend Stat,0063,Set value
+0x02001EAC,2,Stat,Balbaroy Agility Stat,0063,Set value
+0x02001EB0,2,Stat,Balbaroy Movement Stat,003F,Set value
+0x02001EB8,2,Stat,Balbaroy Magic Res Stat,0063,Set value
+0x02001EF0,2,Stat,Balbaroy Current HP,0063,Set value
+0x02001EF4,2,Stat,Balbaroy Max HP,0063,Set value
+0x02001EF8,2,Stat,Balbaroy Current MP,0063,Set value
+0x02001EFC,2,Stat,Balbaroy Max MP,0063,Set value
+0x02001FA0,2,Stat,Balbaroy Ex Stat,0063,Set value
+0x02001FEC,2,Stat,Kokichi Attack Stat,0063,Set value
+0x02001FF0,2,Stat,Kokichi Defend Stat,0063,Set value
+0x02001FF4,2,Stat,Kokichi Agility Stat,0063,Set value
+0x02001FF8,2,Stat,Kokichi Movement Stat,003F,Set value
+0x02002000,2,Stat,Kokichi Magic Res Stat,0063,Set value
+0x02002038,2,Stat,Kokichi Current HP,0063,Set value
+0x0200203C,2,Stat,Kokichi Max HP,0063,Set value
+0x02002040,2,Stat,Kokichi Current MP,0063,Set value
+0x02002044,2,Stat,Kokichi Max MP,0063,Set value
+0x020020E8,2,Stat,Kokichi Ex Stat,0063,Set value
+0x02002134,2,Stat,Bleu Attack Stat,0063,Set value
+0x02002138,2,Stat,Bleu Defend Stat,0063,Set value
+0x0200213C,2,Stat,Bleu Agility Stat,0063,Set value
+0x02002140,2,Stat,Bleu Movement Stat,003F,Set value
+0x02002148,2,Stat,Bleu Magic Res Stat,0063,Set value
+0x02002180,2,Stat,Bleu Current HP,0063,Set value
+0x02002184,2,Stat,Bleu Max HP,0063,Set value
+0x02002188,2,Stat,Bleu Current MP,0063,Set value
+0x0200218C,2,Stat,Bleu Max MP,0063,Set value
+0x02002230,2,Stat,Bleu Ex Stat,0063,Set value
+0x0200227C,2,Stat,Adam Attack Stat,0063,Set value
+0x02002280,2,Stat,Adam Defend Stat,0063,Set value
+0x02002284,2,Stat,Adam Agility Stat,0063,Set value
+0x02002288,2,Stat,Adam Movement Stat,003F,Set value
+0x02002290,2,Stat,Adam Magic Res Stat,0063,Set value
+0x020022C8,2,Stat,Adam Current HP,0063,Set value
+0x020022CC,2,Stat,Adam Max HP,0063,Set value
+0x020022D0,2,Stat,Adam Current MP,0063,Set value
+0x020022D4,2,Stat,Adam Max MP,0063,Set value
+0x02002378,2,Stat,Adam Ex Stat,0063,Set value
+0x020023C4,2,Stat,Zylo Attack Stat,0063,Set value
+0x020023C8,2,Stat,Zylo Defend Stat,0063,Set value
+0x020023CC,2,Stat,Zylo Agility Stat,0063,Set value
+0x020023D0,2,Stat,Zylo Movement Stat,003F,Set value
+0x020023D8,2,Stat,Zylo Magic Res Stat,0063,Set value
+0x02002410,2,Stat,Zylo Current HP,0063,Set value
+0x02002414,2,Stat,Zylo Max HP,0063,Set value
+0x02002418,2,Stat,Zylo Current MP,0063,Set value
+0x0200241C,2,Stat,Zylo Max MP,0063,Set value
+0x020024C0,2,Stat,Zylo Ex Stat,0063,Set value
+0x0200250C,2,Stat,Musashi Attack Stat,0063,Set value
+0x02002510,2,Stat,Musashi Defend Stat,0063,Set value
+0x02002514,2,Stat,Musashi Agility Stat,0063,Set value
+0x02002518,2,Stat,Musashi Movement Stat,003F,Set value
+0x02002520,2,Stat,Musashi Magic Res Stat,0063,Set value
+0x02002558,2,Stat,Musashi Current HP,0063,Set value
+0x0200255C,2,Stat,Musashi Max HP,0063,Set value
+0x02002560,2,Stat,Musashi Current MP,0063,Set value
+0x02002564,2,Stat,Musashi Max MP,0063,Set value
+0x02002608,2,Stat,Musashi Ex Stat,0063,Set value
+0x02002654,2,Stat,Hanzou Attack Stat,0063,Set value
+0x02002658,2,Stat,Hanzou Defend Stat,0063,Set value
+0x0200265C,2,Stat,Hanzou Agility Stat,0063,Set value
+0x02002660,2,Stat,Hanzou Movement Stat,003F,Set value
+0x02002668,2,Stat,Hanzou Magic Res Stat,0063,Set value
+0x020026A0,2,Stat,Hanzou Current HP,0063,Set value
+0x020026A4,2,Stat,Hanzou Max HP,0063,Set value
+0x020026A8,2,Stat,Hanzou Current MP,0063,Set value
+0x020026AC,2,Stat,Hanzou Max MP,0063,Set value
+0x02002750,2,Stat,Hanzou Ex Stat,0063,Set value
+0x0200279C,2,Stat,Yogurt Attack Stat,0063,Set value
+0x020027A0,2,Stat,Yogurt Defend Stat,0063,Set value
+0x020027A4,2,Stat,Yogurt Agility Stat,0063,Set value
+0x020027A8,2,Stat,Yogurt Movement Stat,003F,Set value
+0x020027B0,2,Stat,Yogurt Magic Res Stat,0063,Set value
+0x020027E8,2,Stat,Yogurt Current HP,0063,Set value
+0x020027EC,2,Stat,Yogurt Max HP,0063,Set value
+0x020027F0,2,Stat,Yogurt Current MP,0063,Set value
+0x020027F4,2,Stat,Yogurt Max MP,0063,Set value
+0x02002898,2,Stat,Yogurt Ex Stat,0063,Set value
+0x020028E4,2,Stat,Narsha Attack Stat,0063,Set value
+0x020028E8,2,Stat,Narsha Defend Stat,0063,Set value
+0x020028EC,2,Stat,Narsha Agility Stat,0063,Set value
+0x020028F0,2,Stat,Narsha Movement Stat,003F,Set value
+0x020028F8,2,Stat,Narsha Magic Res Stat,0063,Set value
+0x02002930,2,Stat,Narsha Current HP,0063,Set value
+0x02002934,2,Stat,Narsha Max HP,0063,Set value
+0x02002938,2,Stat,Narsha Current MP,0063,Set value
+0x0200293C,2,Stat,Narsha Max MP,0063,Set value
+0x020029E0,2,Stat,Narsha Ex Stat,0063,Set value
+0x02002A2C,2,Stat,Zuika Attack Stat,0063,Set value
+0x02002A30,2,Stat,Zuika Defend Stat,0063,Set value
+0x02002A34,2,Stat,Zuika Agility Stat,0063,Set value
+0x02002A38,2,Stat,Zuika Movement Stat,003F,Set value
+0x02002A40,2,Stat,Zuika Magic Res Stat,0063,Set value
+0x02002A78,2,Stat,Zuika Current HP,0063,Set value
+0x02002A7C,2,Stat,Zuika Max HP,0063,Set value
+0x02002A80,2,Stat,Zuika Current MP,0063,Set value
+0x02002A84,2,Stat,Zuika Max MP,0063,Set value
+0x02002B28,2,Stat,Zuika Ex Stat,0063,Set value
+0x02002B74,2,Stat,Mawlock Attack Stat,0063,Set value
+0x02002B78,2,Stat,Mawlock Defend Stat,0063,Set value
+0x02002B7C,2,Stat,Mawlock Agility Stat,0063,Set value
+0x02002B80,2,Stat,Mawlock Movement Stat,003F,Set value
+0x02002B88,2,Stat,Mawlock Magic Res Stat,0063,Set value
+0x02002BC0,2,Stat,Mawlock Current HP,0063,Set value
+0x02002BC4,2,Stat,Mawlock Max HP,0063,Set value
+0x02002BC8,2,Stat,Mawlock Current MP,0063,Set value
+0x02002BCC,2,Stat,Mawlock Max MP,0063,Set value
+0x02002C70,2,Stat,Mawlock Ex Stat,0063,Set value
+0x02005688,2,Card,Max,0001,Card unlocked flag
+0x0200568A,2,Card,Mae,0001,Card unlocked flag
+0x0200568C,2,Card,Pelle,0001,Card unlocked flag
+0x0200568E,2,Card,Ken,0001,Card unlocked flag
+0x02005690,2,Card,Vankar,0001,Card unlocked flag
+0x02005692,2,Card,Earnest,0001,Card unlocked flag
+0x02005694,2,Card,Arthur,0001,Card unlocked flag
+0x02005696,2,Card,Gort,0001,Card unlocked flag
+0x02005698,2,Card,Luke,0001,Card unlocked flag
+0x0200569A,2,Card,Guntz,0001,Card unlocked flag
+0x0200569C,2,Card,Anri,0001,Card unlocked flag
+0x0200569E,2,Card,Alef,0001,Card unlocked flag
+0x020056A0,2,Card,Tao,0001,Card unlocked flag
+0x020056A2,2,Card,Domingo,0001,Card unlocked flag
+0x020056A4,2,Card,Lowe,0001,Card unlocked flag
+0x020056A6,2,Card,Khris,0001,Card unlocked flag
+0x020056A8,2,Card,Torasu,0001,Card unlocked flag
+0x020056AA,2,Card,Gong,0001,Card unlocked flag
+0x020056AC,2,Card,Diane,0001,Card unlocked flag
+0x020056AE,2,Card,Hans,0001,Card unlocked flag
+0x020056B0,2,Card,Lyle,0001,Card unlocked flag
+0x020056B2,2,Card,Amon,0001,Card unlocked flag
+0x020056B4,2,Card,Balbaroy,0001,Card unlocked flag
+0x020056B6,2,Card,Kokichi,0001,Card unlocked flag
+0x020056B8,2,Card,Bleu,0001,Card unlocked flag
+0x020056BA,2,Card,Adam,0001,Card unlocked flag
+0x020056BC,2,Card,Zylo,0001,Card unlocked flag
+0x020056BE,2,Card,Musashi,0001,Card unlocked flag
+0x020056C0,2,Card,Hanzou,0001,Card unlocked flag
+0x020056C2,2,Card,Yogurt,0001,Card unlocked flag
+0x020056C4,2,Card,Narsha,0001,Card unlocked flag
+0x020056C6,2,Card,Zuika,0001,Card unlocked flag
+0x020056C8,2,Card,Mawlock,0001,Card unlocked flag
+0x020056CA,2,Card,Rune Knight,0001,Card unlocked flag
+0x020056CC,2,Card,Skeleton,0001,Card unlocked flag
+0x020056CE,2,Card,Marionette,0001,Card unlocked flag
+0x020056D0,2,Card,Ghoul,0001,Card unlocked flag
+0x020056D2,2,Card,Gobgovitch,0001,Card unlocked flag
+0x020056D4,2,Card,Pegasus KT,0001,Card unlocked flag
+0x020056D6,2,Card,Laser Eye,0001,Card unlocked flag
+0x020056D8,2,Card,Silver KT,0001,Card unlocked flag
+0x020056DA,2,Card,Soul Eater,0001,Card unlocked flag
+0x020056DC,2,Card,Elliot,0001,Card unlocked flag
+0x020056DE,2,Card,Hellhound,0001,Card unlocked flag
+0x020056E0,2,Card,Balbazak,0001,Card unlocked flag
+0x020056E2,2,Card,Master Mage,0001,Card unlocked flag
+0x020056E4,2,Card,Dullahan,0001,Card unlocked flag
+0x020056E6,2,Card,Kane,0001,Card unlocked flag
+0x020056E8,2,Card,Mishaela,0001,Card unlocked flag
+0x020056EA,2,Card,Demonmaster,0001,Card unlocked flag
+0x020056EC,2,Card,Chaos,0001,Card unlocked flag
+0x020056EE,2,Card,Ramladu,0001,Card unlocked flag
+0x020056F0,2,Card,Colossus,0001,Card unlocked flag
+0x020056F2,2,Card,Darksol,0001,Card unlocked flag
+0x020056F4,2,Card,Dark Dragon,0001,Card unlocked flag
