@@ -1,4 +1,5 @@
 /ignore/
+/scripts/rom_path.local.txt
 
 # Local editor and OS noise
 .vscode/

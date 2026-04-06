@@ -6,8 +6,9 @@ This repository is a small public knowledge base for reverse engineering Shining
 
 - structured research data in `research/raw/`
 - confirmed mechanics notes in `research/`
+- package-backed tooling in `src/rotdd_tools/`
 - ImHex artifacts in `imhex/`
-- future helper tooling in `scripts/`
+- command-line entry scripts in `scripts/`
 - contribution guidance in `CONTRIBUTING.md`
 
 ## What stays out of version control
@@ -29,10 +30,13 @@ Current confirmed leads:
 - spells and item names exist in a custom single-byte text bank
 - a pointer table around `0x0056ED80` resolves spell and item names
 - same-length in-place edits are already validated
+- a generated text map now records known pointer-table entries in a reusable CSV
+- mapped text rows can be browsed with `list-known-text`
+- mapped text rows can be patched safely with `patch-known-text`
 
-Start with `research/text-mechanics.md` and `scripts/README.md` if you want to continue the text work.
+Start with `research/text-mechanics.md`, `research/text-table-map.md`, and `scripts/README.md` if you want to continue the text work.
 
-For local script setup, edit `scripts/rom_path.local.txt` with a repository-relative ROM path or pass `--rom` directly when running a tool.
+For local script setup, either pass `--rom` directly when running a tool or create `scripts/rom_path.local.txt` with a repository-relative ROM path. If that file does not exist, the script can prompt for a path and save it for later runs.
 
 ## License
 

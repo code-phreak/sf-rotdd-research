@@ -1,0 +1,225 @@
+game,table_slug,category,local_index,pointer_table_offset,pointer_value,text_rom_offset,text_gba_address,text_length,codec,decoded_text,notes
+sf-rotdd,system_terms,system,0,0x0056ED80,0x081DD7E3,0x001DD7E3,0x081DD7E3,10,rotdd,Soul Eater,Small pre-spell table containing system or special-purpose labels.
+sf-rotdd,system_terms,system,1,0x0056ED84,0x081DD7EE,0x001DD7EE,0x081DD7EE,6,rotdd,Varios,Small pre-spell table containing system or special-purpose labels.
+sf-rotdd,system_terms,system,2,0x0056ED88,0x081DD7F5,0x001DD7F5,0x081DD7F5,7,rotdd,Imitate,Small pre-spell table containing system or special-purpose labels.
+sf-rotdd,system_terms,system,3,0x0056ED8C,0x081DD7FD,0x001DD7FD,0x081DD7FD,4,rotdd,None,Small pre-spell table containing system or special-purpose labels.
+sf-rotdd,spell_names,spell,0,0x0056ED90,0x081DD802,0x001DD802,0x081DD802,4,rotdd,Heal,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,1,0x0056ED94,0x081DD807,0x001DD807,0x081DD807,4,rotdd,Heal,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,2,0x0056ED98,0x081DD80C,0x001DD80C,0x081DD80C,4,rotdd,Heal,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,3,0x0056ED9C,0x081DD811,0x001DD811,0x081DD811,4,rotdd,Heal,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,4,0x0056EDA0,0x081DD816,0x001DD816,0x081DD816,4,rotdd,Aura,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,5,0x0056EDA4,0x081DD81B,0x001DD81B,0x081DD81B,4,rotdd,Aura,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,6,0x0056EDA8,0x081DD820,0x001DD820,0x081DD820,4,rotdd,Aura,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,7,0x0056EDAC,0x081DD825,0x001DD825,0x081DD825,4,rotdd,Aura,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,8,0x0056EDB0,0x081DD82A,0x001DD82A,0x081DD82A,5,rotdd,Detox,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,9,0x0056EDB4,0x081DD830,0x001DD830,0x081DD830,6,rotdd,Shield,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,10,0x0056EDB8,0x081DD837,0x001DD837,0x081DD837,6,rotdd,Dispel,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,11,0x0056EDBC,0x081DD83E,0x001DD83E,0x081DD83E,5,rotdd,Elude,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,12,0x0056EDC0,0x081DD844,0x001DD844,0x081DD844,6,rotdd,Attack,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,13,0x0056EDC4,0x081DD84B,0x001DD84B,0x081DD84B,6,rotdd,Attack,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,14,0x0056EDC8,0x081DD852,0x001DD852,0x081DD852,6,rotdd,Attack,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,15,0x0056EDCC,0x081DD859,0x001DD859,0x081DD859,5,rotdd,Quick,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,16,0x0056EDD0,0x081DD85F,0x001DD85F,0x081DD85F,5,rotdd,Quick,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,17,0x0056EDD4,0x081DD865,0x001DD865,0x081DD865,4,rotdd,Slow,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,18,0x0056EDD8,0x081DD86A,0x001DD86A,0x081DD86A,4,rotdd,Slow,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,19,0x0056EDDC,0x081DD86F,0x001DD86F,0x081DD86F,5,rotdd,Sleep,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,20,0x0056EDE0,0x081DD875,0x001DD875,0x081DD875,5,rotdd,Blaze,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,21,0x0056EDE4,0x081DD87B,0x001DD87B,0x081DD87B,5,rotdd,Blaze,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,22,0x0056EDE8,0x081DD881,0x001DD881,0x081DD881,5,rotdd,Blaze,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,23,0x0056EDEC,0x081DD887,0x001DD887,0x081DD887,5,rotdd,Blaze,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,24,0x0056EDF0,0x081DD88D,0x001DD88D,0x081DD88D,6,rotdd,Freeze,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,25,0x0056EDF4,0x081DD894,0x001DD894,0x081DD894,6,rotdd,Freeze,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,26,0x0056EDF8,0x081DD89B,0x001DD89B,0x081DD89B,6,rotdd,Freeze,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,27,0x0056EDFC,0x081DD8A2,0x001DD8A2,0x081DD8A2,6,rotdd,Freeze,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,28,0x0056EE00,0x081DD8A9,0x001DD8A9,0x081DD8A9,4,rotdd,Bolt,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,29,0x0056EE04,0x081DD8AE,0x001DD8AE,0x081DD8AE,4,rotdd,Bolt,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,30,0x0056EE08,0x081DD8B3,0x001DD8B3,0x081DD8B3,4,rotdd,Bolt,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,31,0x0056EE0C,0x081DD8B8,0x001DD8B8,0x081DD8B8,4,rotdd,Bolt,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,32,0x0056EE10,0x081DD8BD,0x001DD8BD,0x081DD8BD,9,rotdd,Supernova,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,33,0x0056EE14,0x081DD8C7,0x001DD8C7,0x081DD8C7,9,rotdd,Supernova,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,34,0x0056EE18,0x081DD8D1,0x001DD8D1,0x081DD8D1,9,rotdd,Supernova,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,35,0x0056EE1C,0x081DD8DB,0x001DD8DB,0x081DD8DB,9,rotdd,Supernova,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,36,0x0056EE20,0x081DD8E5,0x001DD8E5,0x081DD8E5,6,rotdd,Desoul,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,37,0x0056EE24,0x081DD8EC,0x001DD8EC,0x081DD8EC,6,rotdd,Desoul,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,38,0x0056EE28,0x081DD8F3,0x001DD8F3,0x081DD8F3,6,rotdd,Egress,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,39,0x0056EE2C,0x081DD8FA,0x001DD8FA,0x081DD8FA,12,rotdd,Super Egress,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,40,0x0056EE30,0x081DD907,0x001DD907,0x081DD907,4,rotdd,Step,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,41,0x0056EE34,0x081DD90C,0x001DD90C,0x081DD90C,4,rotdd,Step,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,42,0x0056EE38,0x081DD911,0x001DD911,0x081DD911,4,rotdd,Step,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,43,0x0056EE3C,0x081DD916,0x001DD916,0x081DD916,5,rotdd,Boost,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,44,0x0056EE40,0x081DD91C,0x001DD91C,0x081DD91C,5,rotdd,Boost,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,45,0x0056EE44,0x081DD922,0x001DD922,0x081DD922,5,rotdd,Boost,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,46,0x0056EE48,0x081DD928,0x001DD928,0x081DD928,4,rotdd,Move,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,47,0x0056EE4C,0x081DD92D,0x001DD92D,0x081DD92D,4,rotdd,Copy,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,48,0x0056EE50,0x081DD932,0x001DD932,0x081DD932,6,rotdd,Effect,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,49,0x0056EE54,0x081DD939,0x001DD939,0x081DD939,7,rotdd,Imitate,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,spell_names,spell,50,0x0056EE58,0x081DD941,0x001DD941,0x081DD941,4,rotdd,None,Confirmed spell and spell-adjacent menu labels.
+sf-rotdd,item_names,item,0,0x0056EE5C,0x081DD946,0x001DD946,0x081DD946,12,rotdd,Medical Herb,Confirmed item display-name table.
+sf-rotdd,item_names,item,1,0x0056EE60,0x081DD953,0x001DD953,0x081DD953,12,rotdd,Healing Seed,Confirmed item display-name table.
+sf-rotdd,item_names,item,2,0x0056EE64,0x081DD960,0x001DD960,0x081DD960,8,rotdd,Antidote,Confirmed item display-name table.
+sf-rotdd,item_names,item,3,0x0056EE68,0x081DD969,0x001DD969,0x081DD969,10,rotdd,Angel Wing,Confirmed item display-name table.
+sf-rotdd,item_names,item,4,0x0056EE6C,0x081DD974,0x001DD974,0x081DD974,11,rotdd,Shower Cure,Confirmed item display-name table.
+sf-rotdd,item_names,item,5,0x0056EE70,0x081DD980,0x001DD980,0x081DD980,10,rotdd,Power Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,6,0x0056EE74,0x081DD98B,0x001DD98B,0x081DD98B,11,rotdd,Shield Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,7,0x0056EE78,0x081DD997,0x001DD997,0x081DD997,10,rotdd,Speed Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,8,0x0056EE7C,0x081DD9A2,0x001DD9A2,0x081DD9A2,12,rotdd,Agility Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,9,0x0056EE80,0x081DD9AF,0x001DD9AF,0x081DD9AF,10,rotdd,White Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,10,0x0056EE84,0x081DD9BA,0x001DD9BA,0x081DD9BA,10,rotdd,Black Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,11,0x0056EE88,0x081DD9C5,0x001DD9C5,0x081DD9C5,9,rotdd,Evil Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,12,0x0056EE8C,0x081DD9CF,0x001DD9CF,0x081DD9CF,11,rotdd,Yogurt Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,13,0x0056EE90,0x081DD9DB,0x001DD9DB,0x081DD9DB,10,rotdd,Power Wine,Confirmed item display-name table.
+sf-rotdd,item_names,item,14,0x0056EE94,0x081DD9E6,0x001DD9E6,0x081DD9E6,10,rotdd,DEF Potion,Confirmed item display-name table.
+sf-rotdd,item_names,item,15,0x0056EE98,0x081DD9F1,0x001DD9F1,0x081DD9F1,12,rotdd,Quik Chicken,Confirmed item display-name table.
+sf-rotdd,item_names,item,16,0x0056EE9C,0x081DD9FE,0x001DD9FE,0x081DD9FE,12,rotdd,Turbo Pepper,Confirmed item display-name table.
+sf-rotdd,item_names,item,17,0x0056EEA0,0x081DDA0B,0x001DDA0B,0x081DDA0B,9,rotdd,Life Loaf,Confirmed item display-name table.
+sf-rotdd,item_names,item,18,0x0056EEA4,0x081DDA15,0x001DDA15,0x081DDA15,12,rotdd,Orb of Light,Confirmed item display-name table.
+sf-rotdd,item_names,item,19,0x0056EEA8,0x081DDA22,0x001DDA22,0x081DDA22,9,rotdd,Moonstone,Confirmed item display-name table.
+sf-rotdd,item_names,item,20,0x0056EEAC,0x081DDA2C,0x001DDA2C,0x081DDA2C,9,rotdd,Lunar Dew,Confirmed item display-name table.
+sf-rotdd,item_names,item,21,0x0056EEB0,0x081DDA36,0x001DDA36,0x081DDA36,11,rotdd,Domingo Egg,Confirmed item display-name table.
+sf-rotdd,item_names,item,22,0x0056EEB4,0x081DDA42,0x001DDA42,0x081DDA42,12,rotdd,Teeny Bikini,Confirmed item display-name table.
+sf-rotdd,item_names,item,23,0x0056EEB8,0x081DDA4F,0x001DDA4F,0x081DDA4F,12,rotdd,Daring Dress,Confirmed item display-name table.
+sf-rotdd,item_names,item,24,0x0056EEBC,0x081DDA5C,0x001DDA5C,0x081DDA5C,10,rotdd,Blaze Bomb,Confirmed item display-name table.
+sf-rotdd,item_names,item,25,0x0056EEC0,0x081DDA67,0x001DDA67,0x081DDA67,11,rotdd,Short Sword,Confirmed item display-name table.
+sf-rotdd,item_names,item,26,0x0056EEC4,0x081DDA73,0x001DDA73,0x081DDA73,12,rotdd,Middle Sword,Confirmed item display-name table.
+sf-rotdd,item_names,item,27,0x0056EEC8,0x081DDA80,0x001DDA80,0x081DDA80,10,rotdd,Long Sword,Confirmed item display-name table.
+sf-rotdd,item_names,item,28,0x0056EECC,0x081DDA8B,0x001DDA8B,0x081DDA8B,11,rotdd,Steel Sword,Confirmed item display-name table.
+sf-rotdd,item_names,item,29,0x0056EED0,0x081DDA97,0x001DDA97,0x081DDA97,11,rotdd,Broad Sword,Confirmed item display-name table.
+sf-rotdd,item_names,item,30,0x0056EED4,0x081DDAA3,0x001DDAA3,0x081DDAA3,10,rotdd,Doom Blade,Confirmed item display-name table.
+sf-rotdd,item_names,item,31,0x0056EED8,0x081DDAAE,0x001DDAAE,0x081DDAAE,6,rotdd,Katana,Confirmed item display-name table.
+sf-rotdd,item_names,item,32,0x0056EEDC,0x081DDAB5,0x001DDAB5,0x081DDAB5,11,rotdd,Light Saber,Confirmed item display-name table.
+sf-rotdd,item_names,item,33,0x0056EEE0,0x081DDAC1,0x001DDAC1,0x081DDAC1,10,rotdd,Dark Saber,Confirmed item display-name table.
+sf-rotdd,item_names,item,34,0x0056EEE4,0x081DDACC,0x001DDACC,0x081DDACC,12,rotdd,Chaosbreaker,Confirmed item display-name table.
+sf-rotdd,item_names,item,35,0x0056EEE8,0x081DDAD9,0x001DDAD9,0x081DDAD9,12,rotdd,Wooden Arrow,Confirmed item display-name table.
+sf-rotdd,item_names,item,36,0x0056EEEC,0x081DDAE6,0x001DDAE6,0x081DDAE6,11,rotdd,Steel Arrow,Confirmed item display-name table.
+sf-rotdd,item_names,item,37,0x0056EEF0,0x081DDAF2,0x001DDAF2,0x081DDAF2,11,rotdd,Elven Arrow,Confirmed item display-name table.
+sf-rotdd,item_names,item,38,0x0056EEF4,0x081DDAFE,0x001DDAFE,0x081DDAFE,11,rotdd,Armor Arrow,Confirmed item display-name table.
+sf-rotdd,item_names,item,39,0x0056EEF8,0x081DDB0A,0x001DDB0A,0x081DDB0A,11,rotdd,Buster Shot,Confirmed item display-name table.
+sf-rotdd,item_names,item,40,0x0056EEFC,0x081DDB16,0x001DDB16,0x081DDB16,12,rotdd,Bronze Lance,Confirmed item display-name table.
+sf-rotdd,item_names,item,41,0x0056EF00,0x081DDB23,0x001DDB23,0x081DDB23,11,rotdd,Steel Lance,Confirmed item display-name table.
+sf-rotdd,item_names,item,42,0x0056EF04,0x081DDB2F,0x001DDB2F,0x081DDB2F,12,rotdd,Chrome Lance,Confirmed item display-name table.
+sf-rotdd,item_names,item,43,0x0056EF08,0x081DDB3C,0x001DDB3C,0x081DDB3C,7,rotdd,Halberd,Confirmed item display-name table.
+sf-rotdd,item_names,item,44,0x0056EF0C,0x081DDB44,0x001DDB44,0x081DDB44,11,rotdd,Devil Lance,Confirmed item display-name table.
+sf-rotdd,item_names,item,45,0x0056EF10,0x081DDB50,0x001DDB50,0x081DDB50,5,rotdd,Spear,Confirmed item display-name table.
+sf-rotdd,item_names,item,46,0x0056EF14,0x081DDB56,0x001DDB56,0x081DDB56,11,rotdd,Power Spear,Confirmed item display-name table.
+sf-rotdd,item_names,item,47,0x0056EF18,0x081DDB62,0x001DDB62,0x081DDB62,8,rotdd,Valkyrie,Confirmed item display-name table.
+sf-rotdd,item_names,item,48,0x0056EF1C,0x081DDB6B,0x001DDB6B,0x081DDB6B,8,rotdd,Hand Axe,Confirmed item display-name table.
+sf-rotdd,item_names,item,49,0x0056EF20,0x081DDB74,0x001DDB74,0x081DDB74,10,rotdd,Middle Axe,Confirmed item display-name table.
+sf-rotdd,item_names,item,50,0x0056EF24,0x081DDB7F,0x001DDB7F,0x081DDB7F,10,rotdd,Battle Axe,Confirmed item display-name table.
+sf-rotdd,item_names,item,51,0x0056EF28,0x081DDB8A,0x001DDB8A,0x081DDB8A,8,rotdd,Heat Axe,Confirmed item display-name table.
+sf-rotdd,item_names,item,52,0x0056EF2C,0x081DDB93,0x001DDB93,0x081DDB93,9,rotdd,Great Axe,Confirmed item display-name table.
+sf-rotdd,item_names,item,53,0x0056EF30,0x081DDB9D,0x001DDB9D,0x081DDB9D,5,rotdd,Atlas,Confirmed item display-name table.
+sf-rotdd,item_names,item,54,0x0056EF34,0x081DDBA3,0x001DDBA3,0x081DDBA3,12,rotdd,Wooden Staff,Confirmed item display-name table.
+sf-rotdd,item_names,item,55,0x0056EF38,0x081DDBB0,0x001DDBB0,0x081DDBB0,11,rotdd,Power Staff,Confirmed item display-name table.
+sf-rotdd,item_names,item,56,0x0056EF3C,0x081DDBBC,0x001DDBBC,0x081DDBBC,11,rotdd,Guard Staff,Confirmed item display-name table.
+sf-rotdd,item_names,item,57,0x0056EF40,0x081DDBC8,0x001DDBC8,0x081DDBC8,10,rotdd,Holy Staff,Confirmed item display-name table.
+sf-rotdd,item_names,item,58,0x0056EF44,0x081DDBD3,0x001DDBD3,0x081DDBD3,9,rotdd,Demon Rod,Confirmed item display-name table.
+sf-rotdd,item_names,item,59,0x0056EF48,0x081DDBDD,0x001DDBDD,0x081DDBDD,10,rotdd,Demibuster,Confirmed item display-name table.
+sf-rotdd,item_names,item,60,0x0056EF4C,0x081DDBE8,0x001DDBE8,0x081DDBE8,12,rotdd,Mermanbuster,Confirmed item display-name table.
+sf-rotdd,item_names,item,61,0x0056EF50,0x081DDBF5,0x001DDBF5,0x081DDBF5,10,rotdd,Soulbuster,Confirmed item display-name table.
+sf-rotdd,item_names,item,62,0x0056EF54,0x081DDC00,0x001DDC00,0x081DDC00,7,rotdd,Duelist,Confirmed item display-name table.
+sf-rotdd,item_names,item,63,0x0056EF58,0x081DDC08,0x001DDC08,0x081DDC08,9,rotdd,Destroyer,Confirmed item display-name table.
+sf-rotdd,item_names,item,64,0x0056EF5C,0x081DDC12,0x001DDC12,0x081DDC12,6,rotdd,Sniper,Confirmed item display-name table.
+sf-rotdd,item_names,item,65,0x0056EF60,0x081DDC19,0x001DDC19,0x081DDC19,11,rotdd,Power Lance,Confirmed item display-name table.
+sf-rotdd,item_names,item,66,0x0056EF64,0x081DDC25,0x001DDC25,0x081DDC25,11,rotdd,Ogre Slayer,Confirmed item display-name table.
+sf-rotdd,item_names,item,67,0x0056EF68,0x081DDC31,0x001DDC31,0x081DDC31,10,rotdd,Elf Slayer,Confirmed item display-name table.
+sf-rotdd,item_names,item,68,0x0056EF6C,0x081DDC3C,0x001DDC3C,0x081DDC3C,12,rotdd,Jagged Flash,Confirmed item display-name table.
+sf-rotdd,item_names,item,69,0x0056EF70,0x081DDC49,0x001DDC49,0x081DDC49,9,rotdd,Landslide,Confirmed item display-name table.
+sf-rotdd,item_names,item,70,0x0056EF74,0x081DDC53,0x001DDC53,0x081DDC53,11,rotdd,Raging Drum,Confirmed item display-name table.
+sf-rotdd,item_names,item,71,0x0056EF78,0x081DDC5F,0x001DDC5F,0x081DDC5F,12,rotdd,Voodoo Staff,Confirmed item display-name table.
+sf-rotdd,item_names,item,72,0x0056EF7C,0x081DDC6C,0x001DDC6C,0x081DDC6C,10,rotdd,Doll Hater,Confirmed item display-name table.
+sf-rotdd,item_names,item,73,0x0056EF80,0x081DDC77,0x001DDC77,0x081DDC77,12,rotdd,Zombie Charm,Confirmed item display-name table.
+sf-rotdd,item_names,item,74,0x0056EF84,0x081DDC84,0x001DDC84,0x081DDC84,9,rotdd,Paralyzer,Confirmed item display-name table.
+sf-rotdd,item_names,item,75,0x0056EF88,0x081DDC8E,0x001DDC8E,0x081DDC8E,4,rotdd,Mace,Confirmed item display-name table.
+sf-rotdd,item_names,item,76,0x0056EF8C,0x081DDC93,0x001DDC93,0x081DDC93,10,rotdd,Heavy Mace,Confirmed item display-name table.
+sf-rotdd,item_names,item,77,0x0056EF90,0x081DDC9E,0x001DDC9E,0x081DDC9E,9,rotdd,Holy Mace,Confirmed item display-name table.
+sf-rotdd,item_names,item,78,0x0056EF94,0x081DDCA8,0x001DDCA8,0x081DDCA8,12,rotdd,Miracle Mace,Confirmed item display-name table.
+sf-rotdd,item_names,item,79,0x0056EF98,0x081DDCB5,0x001DDCB5,0x081DDCB5,12,rotdd,Dragonslayer,Confirmed item display-name table.
+sf-rotdd,item_names,item,80,0x0056EF9C,0x081DDCC2,0x001DDCC2,0x081DDCC2,10,rotdd,Steel Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,81,0x0056EFA0,0x081DDCCD,0x001DDCCD,0x081DDCCD,11,rotdd,Silver Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,82,0x0056EFA4,0x081DDCD9,0x001DDCD9,0x081DDCD9,9,rotdd,Gold Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,83,0x0056EFA8,0x081DDCE3,0x001DDCE3,0x081DDCE3,10,rotdd,Evade Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,84,0x0056EFAC,0x081DDCEE,0x001DDCEE,0x081DDCEE,9,rotdd,Wind Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,85,0x0056EFB0,0x081DDCF8,0x001DDCF8,0x081DDCF8,12,rotdd,Tornado Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,86,0x0056EFB4,0x081DDD05,0x001DDD05,0x081DDD05,10,rotdd,Charm Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,87,0x0056EFB8,0x081DDD10,0x001DDD10,0x081DDD10,11,rotdd,Prayer Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,88,0x0056EFBC,0x081DDD1C,0x001DDD1C,0x081DDD1C,9,rotdd,Seal Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,89,0x0056EFC0,0x081DDD26,0x001DDD26,0x081DDD26,12,rotdd,Healing Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,90,0x0056EFC4,0x081DDD33,0x001DDD33,0x081DDD33,12,rotdd,Rousing Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,91,0x0056EFC8,0x081DDD40,0x001DDD40,0x081DDD40,9,rotdd,Holy Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,92,0x0056EFCC,0x081DDD4A,0x001DDD4A,0x081DDD4A,11,rotdd,Sniper Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,93,0x0056EFD0,0x081DDD56,0x001DDD56,0x081DDD56,10,rotdd,Repel Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,94,0x0056EFD4,0x081DDD61,0x001DDD61,0x081DDD61,12,rotdd,Counter Ring,Confirmed item display-name table.
+sf-rotdd,item_names,item,95,0x0056EFD8,0x081DDD6E,0x001DDD6E,0x081DDD6E,12,rotdd,Maid Uniform,Confirmed item display-name table.
+sf-rotdd,item_names,item,96,0x0056EFDC,0x081DDD7B,0x001DDD7B,0x081DDD7B,4,rotdd,Card,Confirmed item display-name table. Display name appears more than once in the pointer table.
+sf-rotdd,item_names,item,97,0x0056EFE0,0x081DDD80,0x001DDD80,0x081DDD80,9,rotdd,Used Card,Confirmed item display-name table. Display name appears more than once in the pointer table.
+sf-rotdd,item_names,item,98,0x0056EFE4,0x081DDD8A,0x001DDD8A,0x081DDD8A,4,rotdd,Card,Confirmed item display-name table. Display name appears more than once in the pointer table.
+sf-rotdd,item_names,item,99,0x0056EFE8,0x081DDD8F,0x001DDD8F,0x081DDD8F,9,rotdd,Used Card,Confirmed item display-name table. Display name appears more than once in the pointer table.
+sf-rotdd,item_names,item,100,0x0056EFEC,0x081DDD99,0x001DDD99,0x081DDD99,5,rotdd,Kenji,Confirmed item display-name table.
+sf-rotdd,item_names,item,101,0x0056EFF0,0x081DDD9F,0x001DDD9F,0x081DDD9F,5,rotdd,Rifle,Confirmed item display-name table.
+sf-rotdd,item_names,item,102,0x0056EFF4,0x081DDDA5,0x001DDDA5,0x081DDDA5,9,rotdd,Papa Doll,Confirmed item display-name table.
+sf-rotdd,item_names,item,103,0x0056EFF8,0x081DDDAF,0x001DDDAF,0x081DDDAF,5,rotdd,Youji,Confirmed item display-name table.
+sf-rotdd,item_names,item,104,0x0056EFFC,0x081DDDB5,0x001DDDB5,0x081DDDB5,9,rotdd,Taboo Box,Confirmed item display-name table.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,0,0x0056F000,0x081DDDBF,0x001DDDBF,0x081DDDBF,9,rotdd,Swordsman,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,1,0x0056F004,0x081DDDC9,0x001DDDC9,0x081DDDC9,6,rotdd,Knight,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,2,0x0056F008,0x081DDDD0,0x001DDDD0,0x081DDDD0,7,rotdd,Warrior,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,3,0x0056F00C,0x081DDDD8,0x001DDDD8,0x081DDDD8,8,rotdd,Steam KT,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,4,0x0056F010,0x081DDDE1,0x001DDDE1,0x081DDDE1,4,rotdd,Mage,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,5,0x0056F014,0x081DDDE6,0x001DDDE6,0x081DDDE6,4,rotdd,Monk,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,6,0x0056F018,0x081DDDEB,0x001DDDEB,0x081DDDEB,6,rotdd,Healer,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,7,0x0056F01C,0x081DDDF2,0x001DDDF2,0x081DDDF2,6,rotdd,Archer,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,8,0x0056F020,0x081DDDF9,0x001DDDF9,0x081DDDF9,10,rotdd,Assault KT,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,9,0x0056F024,0x081DDE04,0x001DDE04,0x081DDE04,7,rotdd,Birdman,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,10,0x0056F028,0x081DDE0C,0x001DDE0C,0x081DDE0C,9,rotdd,Winged KT,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,11,0x0056F02C,0x081DDE16,0x001DDE16,0x081DDE16,6,rotdd,Dragon,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,12,0x0056F030,0x081DDE1D,0x001DDE1D,0x081DDE1D,5,rotdd,Robot,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,13,0x0056F034,0x081DDE23,0x001DDE23,0x081DDE23,8,rotdd,Werewolf,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,14,0x0056F038,0x081DDE2C,0x001DDE2C,0x081DDE2C,7,rotdd,Samurai,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,15,0x0056F03C,0x081DDE34,0x001DDE34,0x081DDE34,5,rotdd,Ninja,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,16,0x0056F040,0x081DDE3A,0x001DDE3A,0x081DDE3A,6,rotdd,Shaman,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,17,0x0056F044,0x081DDE41,0x001DDE41,0x081DDE41,8,rotdd,Assassin,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,18,0x0056F048,0x081DDE4A,0x001DDE4A,0x081DDE4A,4,rotdd,Hero,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,19,0x0056F04C,0x081DDE4F,0x001DDE4F,0x081DDE4F,7,rotdd,Paladin,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,20,0x0056F050,0x081DDE57,0x001DDE57,0x081DDE57,9,rotdd,Gladiator,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,21,0x0056F054,0x081DDE61,0x001DDE61,0x081DDE61,11,rotdd,Steam Baron,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,22,0x0056F058,0x081DDE6D,0x001DDE6D,0x081DDE6D,6,rotdd,Wizard,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,23,0x0056F05C,0x081DDE74,0x001DDE74,0x081DDE74,11,rotdd,Master Monk,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,24,0x0056F060,0x081DDE80,0x001DDE80,0x081DDE80,5,rotdd,Vicar,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,25,0x0056F064,0x081DDE86,0x001DDE86,0x081DDE86,9,rotdd,Bowmaster,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,26,0x0056F068,0x081DDE90,0x001DDE90,0x081DDE90,9,rotdd,Strike KT,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,27,0x0056F06C,0x081DDE9A,0x001DDE9A,0x081DDE9A,11,rotdd,Sky Warrior,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,28,0x0056F070,0x081DDEA6,0x001DDEA6,0x081DDEA6,8,rotdd,Sky Lord,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,29,0x0056F074,0x081DDEAF,0x001DDEAF,0x081DDEAF,10,rotdd,Great DRGN,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,30,0x0056F078,0x081DDEBA,0x001DDEBA,0x081DDEBA,6,rotdd,Cyborg,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,31,0x0056F07C,0x081DDEC1,0x001DDEC1,0x081DDEC1,10,rotdd,Wolf Baron,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,32,0x0056F080,0x081DDECC,0x001DDECC,0x081DDECC,11,rotdd,Swordmaster,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,33,0x0056F084,0x081DDED8,0x001DDED8,0x081DDED8,11,rotdd,Super Ninja,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,34,0x0056F088,0x081DDEE4,0x001DDEE4,0x081DDEE4,4,rotdd,Guru,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,35,0x0056F08C,0x081DDEE9,0x001DDEE9,0x081DDEE9,10,rotdd,Terminator,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,36,0x0056F090,0x081DDEF4,0x001DDEF4,0x081DDEF4,6,rotdd,Yogurt,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,37,0x0056F094,0x081DDEFB,0x001DDEFB,0x081DDEFB,9,rotdd,Magic Egg,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,38,0x0056F098,0x081DDF05,0x001DDF05,0x081DDF05,11,rotdd,Card Master,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,39,0x0056F09C,0x081DDF11,0x001DDF11,0x081DDF11,6,rotdd,Goblin,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,40,0x0056F0A0,0x081DDF18,0x001DDF18,0x081DDF18,8,rotdd,Bowrider,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,41,0x0056F0A4,0x081DDF21,0x001DDF21,0x081DDF21,11,rotdd,Rune Knight,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,42,0x0056F0A8,0x081DDF2D,0x001DDF2D,0x081DDF2D,9,rotdd,Silver KT,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,43,0x0056F0AC,0x081DDF37,0x001DDF37,0x081DDF37,8,rotdd,Dullahan,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,44,0x0056F0B0,0x081DDF40,0x001DDF40,0x081DDF40,10,rotdd,Dark Dwarf,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,45,0x0056F0B4,0x081DDF4B,0x001DDF4B,0x081DDF4B,7,rotdd,Centaur,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,46,0x0056F0B8,0x081DDF53,0x001DDF53,0x081DDF53,6,rotdd,Sniper,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,47,0x0056F0BC,0x081DDF5A,0x001DDF5A,0x081DDF5A,8,rotdd,Dark Elf,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,48,0x0056F0C0,0x081DDF63,0x001DDF63,0x081DDF63,9,rotdd,Lizardman,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,49,0x0056F0C4,0x081DDF6D,0x001DDF6D,0x081DDF6D,9,rotdd,Dark Mage,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,50,0x0056F0C8,0x081DDF77,0x001DDF77,0x081DDF77,11,rotdd,Dark Priest,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,51,0x0056F0CC,0x081DDF83,0x001DDF83,0x081DDF83,11,rotdd,High Priest,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,52,0x0056F0D0,0x081DDF8F,0x001DDF8F,0x081DDF8F,8,rotdd,Cerberus,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,53,0x0056F0D4,0x081DDF98,0x001DDF98,0x081DDF98,9,rotdd,Hellhound,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,54,0x0056F0D8,0x081DDFA2,0x001DDFA2,0x081DDFA2,8,rotdd,Gargoyle,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,55,0x0056F0DC,0x081DDFAB,0x001DDFAB,0x081DDFAB,6,rotdd,Belial,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,56,0x0056F0E0,0x081DDFB2,0x001DDFB2,0x081DDFB2,5,rotdd,Golem,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,57,0x0056F0E4,0x081DDFB8,0x001DDFB8,0x081DDFB8,11,rotdd,Green Golem,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,58,0x0056F0E8,0x081DDFC4,0x001DDFC4,0x081DDFC4,11,rotdd,Dark Priest,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,59,0x0056F0EC,0x081DDFD0,0x001DDFD0,0x081DDFD0,6,rotdd,Zombie,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,60,0x0056F0F0,0x081DDFD7,0x001DDFD7,0x081DDFD7,9,rotdd,Dark Mage,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,61,0x0056F0F4,0x081DDFE1,0x001DDFE1,0x081DDFE1,11,rotdd,Master Mage,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,62,0x0056F0F8,0x081DDFED,0x001DDFED,0x081DDFED,11,rotdd,Demonmaster,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.
+sf-rotdd,class_enemy_type_names_partial,class_or_enemy_type,63,0x0056F0FC,0x081DDFF9,0x001DDFF9,0x081DDFF9,9,rotdd,Giant Bat,Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.

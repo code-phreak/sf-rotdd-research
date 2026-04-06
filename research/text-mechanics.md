@@ -61,6 +61,8 @@ Confirmed entries:
 - `0x0056EDE0 -> 0x001DD875 -> Blaze`
 - `0x0056EE5C -> 0x001DD946 -> Medical Herb`
 
+The current structured export of these tables lives in `research/raw/text-map.csv`.
+
 This means the working lookup path is at least:
 
 1. an ID or index
@@ -77,6 +79,8 @@ The first successful validation pass used in-place editing of an item name and c
 - same-length replacement
 - shorter replacement if the original `0x00` terminator is preserved correctly
 - testing on a copy of the ROM
+
+The repository tooling now supports this same conservative workflow directly through `patch-known-text`, but it still enforces a copied-ROM output and same-length replacement only.
 
 ### What is not safe yet
 
@@ -96,6 +100,8 @@ This is the current best practice for validating a text edit.
 6. Verify the result in mGBA.
 
 This workflow already worked for an inventory item name and is a reliable first pass before deeper repointing work.
+
+The script currently only supports replacement text that fits the known ROTDD letter-and-space codec.
 
 ## Suggested breakpoint strategy
 
