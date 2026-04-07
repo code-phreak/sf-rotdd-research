@@ -7,13 +7,17 @@ import sys
 from pathlib import Path
 
 from .catalog import (
+    export_character_name_map,
+    export_character_name_references,
     export_known_text_map,
     export_text_surface_corpus,
     export_text_surface_map,
+    write_character_name_csv,
+    write_character_name_references_csv,
     write_text_map_csv,
     write_text_surface_csv,
 )
-from .editing import patch_known_text, patch_text_at_offset
+from .editing import patch_character_name_everywhere, patch_known_text, patch_text_at_offset
 from .gba import GBA_ROM_BASE, format_ascii, iter_find_all, printable_ascii, read_terminated_string
 from .paths import REPO_ROOT, resolve_rom_path
 from .rotdd import (
@@ -192,6 +196,22 @@ def run_export_known_text_map(data: bytes, output: Path) -> None:
     print(f"Wrote {len(rows)} rows to {output_path}")
 
 
+def run_export_character_name_map(data: bytes, output: Path) -> None:
+    """Export the canonical character-name pointer table to CSV."""
+    rows = export_character_name_map(data)
+    output_path = output if output.is_absolute() else (REPO_ROOT / output)
+    write_character_name_csv(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def run_export_character_name_references(data: bytes, current_name: str, output: Path) -> None:
+    """Export every current-name reference we can see in the ROM."""
+    rows = export_character_name_references(data, current_name)
+    output_path = output if output.is_absolute() else (REPO_ROOT / output)
+    write_character_name_references_csv(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
 def run_export_text_surface_map(
     data: bytes,
     start: int,
@@ -203,6 +223,26 @@ def run_export_text_surface_map(
     output_path = output if output.is_absolute() else (REPO_ROOT / output)
     write_text_surface_csv(rows, output_path)
     print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def run_list_character_names(data: bytes, contains: str | None, limit: int | None) -> int:
+    """List canonical character names in a compact terminal-friendly format."""
+    rows = export_character_name_map(data)
+    if contains is not None:
+        needle = contains.lower()
+        rows = [row for row in rows if needle in row.decoded_name.lower()]
+    if limit is not None:
+        rows = rows[:limit]
+
+    for row in rows:
+        print(
+            f"{row.local_index:>3} "
+            f"ptr=0x{row.pointer_table_offset:08X} "
+            f"rom=0x{row.name_rom_offset:08X} "
+            f"name={row.decoded_name}"
+        )
+
+    return len(rows)
 
 
 def run_list_known_text(
@@ -279,6 +319,52 @@ def run_patch_known_text(
     print(f"ROM offset: 0x{row.text_rom_offset:08X}")
     print(f"Pointer-table offset: 0x{row.pointer_table_offset:08X}")
     print(f"Encoded bytes: {' '.join(f'{byte:02X}' for byte in replacement_bytes)}")
+    if in_place:
+        print(f"Patched source ROM in place: {final_output_path}")
+    else:
+        print(f"Wrote patched ROM: {final_output_path}")
+
+
+def run_patch_character_name(
+    data: bytes,
+    rom_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> None:
+    """Patch a character name everywhere we can confidently see it."""
+    output_path = None
+    if output is not None:
+        output_path = output if output.is_absolute() else (REPO_ROOT / output)
+
+    row, patched_rows, skipped_rows, final_output_path = patch_character_name_everywhere(
+        data=data,
+        source_path=rom_path,
+        current_name=current_name,
+        replacement_name=replacement_name,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+
+    print(f"Character name: {row.decoded_name}")
+    print(f"Replacement: {replacement_name}")
+    print(f"Pointer-table offset: 0x{row.pointer_table_offset:08X}")
+    print(f"Original ROM offset: 0x{row.name_rom_offset:08X}")
+    print(f"Patched references: {len(patched_rows)}")
+    print(f"Skipped references: {len(skipped_rows)}")
+    if any(ref.source_kind == "canonical_name" for ref in patched_rows):
+        print("Canonical pointer table updated.")
+    if skipped_rows:
+        print("Skipped rows:")
+        for ref in skipped_rows[:5]:
+            print(
+                f"  {ref.source_kind} "
+                f"rom=0x{ref.rom_offset:08X} "
+                f"src={ref.source_label}[{ref.source_index}]"
+            )
     if in_place:
         print(f"Patched source ROM in place: {final_output_path}")
     else:
@@ -422,6 +508,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output CSV path, relative to the repository root by default.",
     )
 
+    character_export_parser = subparsers.add_parser(
+        "export-character-name-map",
+        help="Export the canonical character-name pointer table to a CSV artifact.",
+    )
+    character_export_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("research/raw/character-names.csv"),
+        help="Output CSV path, relative to the repository root by default.",
+    )
+
+    character_reference_export_parser = subparsers.add_parser(
+        "export-character-name-references",
+        help="Export every current-name reference we can see in the ROM.",
+    )
+    character_reference_export_parser.add_argument(
+        "current_name",
+        help="Current character name to search for in the ROM.",
+    )
+    character_reference_export_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("research/raw/character-name-references.csv"),
+        help="Output CSV path, relative to the repository root by default.",
+    )
+
     surface_export_parser = subparsers.add_parser(
         "export-text-surface-map",
         help="Export a contiguous text surface to a CSV artifact.",
@@ -450,6 +562,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("research/raw/text-surfaces.csv"),
         help="Output CSV path, relative to the repository root by default.",
+    )
+
+    character_list_parser = subparsers.add_parser(
+        "list-character-names",
+        help="List the canonical character names from the pointer table.",
+    )
+    character_list_parser.add_argument(
+        "--contains",
+        help="Only list names whose decoded text contains this substring.",
+    )
+    character_list_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of rows to print.",
     )
 
     list_parser = subparsers.add_parser(
@@ -508,7 +634,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patch_parser.add_argument(
         "replacement",
-        help="Replacement text. It must encode to exactly the same byte length as the original.",
+        help="Replacement text. It must fit the original byte budget; use <QUOTE> for a double quote.",
     )
     patch_parser.add_argument(
         "--output",
@@ -526,6 +652,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write directly into the source ROM. Unsafe.",
     )
 
+    character_patch_parser = subparsers.add_parser(
+        "patch-character-name",
+        help="Case-sensitive global rename across the canonical name table and matched text references.",
+    )
+    character_patch_parser.add_argument("current_name", help="Existing character name to replace.")
+    character_patch_parser.add_argument("replacement", help="New character name.")
+    character_patch_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    character_patch_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    character_patch_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
     patch_offset_parser = subparsers.add_parser(
         "patch-text-at-offset",
         help="Patch a same-length ROTDD text run at a literal ROM offset.",
@@ -537,7 +685,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patch_offset_parser.add_argument(
         "replacement",
-        help="Replacement text. Quote it when it contains spaces or punctuation.",
+        help="Replacement text. Quote it when it contains spaces or punctuation; use <QUOTE> for a double quote.",
     )
     patch_offset_parser.add_argument(
         "--output",
@@ -592,6 +740,12 @@ def main() -> int:
     if args.command == "export-known-text-map":
         run_export_known_text_map(data, args.output)
         return 0
+    if args.command == "export-character-name-map":
+        run_export_character_name_map(data, args.output)
+        return 0
+    if args.command == "export-character-name-references":
+        run_export_character_name_references(data, args.current_name, args.output)
+        return 0
     if args.command == "export-text-surface-map":
         run_export_text_surface_map(
             data=data,
@@ -606,6 +760,8 @@ def main() -> int:
         write_text_surface_csv(rows, output_path)
         print(f"Wrote {len(rows)} rows to {output_path}")
         return 0
+    if args.command == "list-character-names":
+        return 0 if run_list_character_names(data, args.contains, args.limit) else 1
     if args.command == "list-known-text":
         return 0 if run_list_known_text(data, args.table, args.category, args.contains, args.limit, args.show_notes) else 1
     if args.command == "patch-known-text":
@@ -617,6 +773,17 @@ def main() -> int:
             match_text=args.match_text,
             occurrence=args.occurrence,
             replacement_text=args.replacement,
+            output=args.output,
+            overwrite=args.overwrite,
+            in_place=args.in_place,
+        )
+        return 0
+    if args.command == "patch-character-name":
+        run_patch_character_name(
+            data=data,
+            rom_path=rom_path,
+            current_name=args.current_name,
+            replacement_name=args.replacement,
             output=args.output,
             overwrite=args.overwrite,
             in_place=args.in_place,

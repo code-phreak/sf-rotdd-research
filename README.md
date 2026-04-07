@@ -1,55 +1,99 @@
 # Shining Force: Resurrection of the Dark Dragon Reverse Engineering
 
-This repository is a small public knowledge base and tooling project for reverse engineering Shining Force: Resurrection of the Dark Dragon on the Game Boy Advance.
+This repository is a public knowledge base and tooling project for reverse engineering *Shining Force: Resurrection of the Dark Dragon* on Game Boy Advance.
 
-## What is public here
+It is meant to be readable by humans first and useful to tools second. The goal is to preserve confirmed evidence, keep the code maintainable, and make each step reproducible.
 
-- structured research data in `research/raw/`
-- confirmed mechanics notes in `research/`
-- package-backed tooling in `src/rotdd_tools/`
-- ImHex artifacts in `imhex/`
-- command-line entry scripts in `scripts/`
-- contribution guidance in `CONTRIBUTING.md`
+## Quick Start
 
-## What stays out of version control
+1. Use Python to run the command-line tool from the repository root.
+2. Pass `--rom` with a ROM copy, or let the script prompt for a local ROM path.
+3. For arbitrary text replacement, start with `patch-text-at-offset`.
 
-- ROMs
-- saves and savestates
-- live Ghidra project data
-- other local-only working material
+Examples:
 
-Those files live under `ignore/`.
+```powershell
+python scripts/rom_text_tools.py --rom path\to\your-rom.gba peek 0x00195F37 --length 0x80
+python scripts/rom_text_tools.py --rom path\to\your-rom.gba patch-text-at-offset 0x00195F37 "Mae: Hyaaah!" --output ignore\rom\test.gba
+python scripts/rom_text_tools.py --rom path\to\your-rom.gba patch-character-name Mae Jade --output ignore\rom\test-mae-jade.gba
+```
 
-## Current focus
+If you do not want to type `--rom` every time, create `scripts/rom_path.local.txt` with a repository-relative ROM path. That file is ignored by Git and remains local.
 
-The current working artifacts are the structured address data, an ImHex pattern that has tested accurate so far, and a confirmed first pass on the game's text system.
+## What This Repo Contains
+
+- `research/raw/` for structured exports and other raw research data
+- `research/` for confirmed writeups and maintained notes
+- `src/rotdd_tools/` for package-backed tooling
+- `scripts/` for thin command-line entry points and usage notes
+- `imhex/` for shared ImHex artifacts
+- `ignore/` for ROMs, savestates, Ghidra data, and other private local material
+
+## Useful Data And Docs
+
+The main folders and files to know about are:
+
+- [`research/raw/text-map.csv`](./research/raw/text-map.csv) for confirmed pointer-table text
+- [`research/raw/text-surfaces.csv`](./research/raw/text-surfaces.csv) for the broad dialogue/script corpus
+- [`research/raw/character-names.csv`](./research/raw/character-names.csv) for the canonical name pointer table
+- [`research/raw/character-name-references.csv`](./research/raw/character-name-references.csv) for global rename review rows
+- [`research/character-attributes.md`](./research/character-attributes.md) for character name and attribute notes
+- [`research/text-mechanics.md`](./research/text-mechanics.md) for the current text codec and wrapping rules
+- [`research/text-table-map.md`](./research/text-table-map.md) for the known table map
+- [`scripts/README.md`](./scripts/README.md) for command reference and examples
+- [`scripts/architecture.md`](./scripts/architecture.md) for the implementation split
+- [`PROGRESS.md`](./PROGRESS.md) for the running work log
+
+## Current Focus
+
+The current work is centered on story dialogue, broader text manipulation, and conservative character-attribute editing.
 
 Current confirmed leads:
 
 - enemy names exist in a plain ASCII bank
-- spells and item names exist in a custom single-byte text bank
+- spell and item names exist in a custom single-byte text bank
+- the canonical character-name table is a plain ASCII pointer table at `0x0056F578`
+- `Mawlock` is part of the canonical character-name table and should remain tracked
 - a pointer table around `0x0056ED80` resolves spell and item names
-- conservative in-place edits are already validated on copied ROMs
-- a generated text map now records known pointer-table entries in a reusable CSV
 - a whole-ROM dialogue-like corpus can be exported to `research/raw/text-surfaces.csv`
 - a narrower contiguous dialogue/script excerpt export remains available for known ROM ranges
 - mapped text rows can be browsed with `list-known-text`
 - mapped text rows can be patched safely with `patch-known-text`
+- character names can be browsed with `list-character-names`
+- character names can be renamed safely with `patch-character-name`
 - arbitrary ROM offsets can be patched with `patch-text-at-offset`
 - additional ROTDD-style text runs can be scanned with `scan-rotdd-runs`
-- a likely story or script text bank appears around `0x001765C0`
-- confirmed dialogue punctuation and control bytes now round-trip in the surface CSV
-- the combined surface CSV keeps ROM offset and decoded dialogue text together for easier human review and future CSV-driven patching
-- the surface CSV quotes only the `decoded_text` field so it stays readable while preserving commas and inline tags inside the text cell
+- the dialogue codec currently supports punctuation, control tags, visible digits, and whole-name replacements in a CSV-friendly format
 - the dialogue box is currently treated as a 35-character wide, 3-row surface for automatic wrapping
 
-Start with `research/text-mechanics.md`, `research/text-table-map.md`, `research/text-surfaces.md`, `PROGRESS.md`, and `scripts/README.md` if you want to continue the text work.
+`patch-character-name` is the conservative attribute-editing command for names. It patches the canonical name pointer table, repoints longer names into observed safe padding when possible, and rewrites whole-name matches across known text rows, dialogue surfaces, and short ROTDD surface runs such as menu labels, join banners, and card labels. Repointed rows use safe free space above the ROM header, and the allocator tracks reserved spans so one rename does not overwrite another.
 
-For local script setup, either pass `--rom` directly when running a tool or create `scripts/rom_path.local.txt` with a repository-relative ROM path. If that file does not exist, the script can prompt for a path and save it for later runs.
+## Text Editing Basics
 
-`list-known-text` is the safest way to browse patch targets before you edit anything. Use `--table`, `--category`, `--contains`, and `--show-notes` to narrow the list.
+`patch-text-at-offset` is the simplest CSV-friendly write path when you already know a literal ROM offset.
 
-`patch-text-at-offset` is the simplest CSV-driven write path when you already know a literal ROM offset. Pass the offset and replacement text as separate positional arguments, then add `--output` for a copied ROM or `--in-place` if you intentionally want to overwrite the source ROM. Quote the replacement when it contains spaces or punctuation. The tool will wrap on whole-word boundaries into at most three rows of 35 characters, trim trailing padding spaces if needed to stay within the original byte budget, and refuse to overflow into a different surface. If a short punctuated token would be orphaned at the end of a long line, the tool nudges it to the next line instead of splitting it. Page breaks reset the three-row budget for the next page.
+- pass the offset and replacement text as separate positional arguments
+- quote the replacement when it contains spaces or punctuation so the shell keeps it together as one argument
+- use `<QUOTE>` inside the replacement when you need a double quote
+- the tool auto-wraps on whole-word boundaries into at most three rows of 35 characters when you do not supply explicit `<NEWLINE>` tags
+- `<PAGE_BREAK>` resets the three-row budget for the next page
+- if the wrapped text would need more than three visible rows on one page, the command fails instead of overflowing into a different surface
+- the tool prints a warning when it inserts line breaks for you, because the result should be reviewed on screen
+
+Example:
+
+```powershell
+python scripts/rom_text_tools.py --rom path\to\your-rom.gba patch-text-at-offset 0x00195F37 "Mae: I'm busy.<PAGE_BREAK>Come back later.<SPEAKER_BREAK>" --output ignore\rom\test.gba
+```
+
+## Safety Notes
+
+- `patch-known-text` only works on mapped rows from the known ROTDD tables
+- `patch-text-at-offset` works from a literal ROM offset and still stays within the original byte budget
+- both write commands accept `--in-place` if you intentionally want to overwrite the source ROM
+- `--in-place` is unsafe and should only be used when you have a backup copy
+- duplicate live names are rejected when a rename would create a collision
+- the canonical character-name export now includes `Mawlock` as the 33rd named row
 
 ## License
 

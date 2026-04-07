@@ -35,10 +35,14 @@ If the file does not exist, is empty, is unreadable, or points to a ROM path tha
 - `find-pointer` searches for GBA little-endian ROM pointers to a target offset.
 - `dump-pointer-table` decodes a pointer table into strings.
 - `export-known-text-map` writes the current known ROTDD text tables to `research/raw/text-map.csv`.
+- `export-character-name-map` writes the canonical character-name pointer table to `research/raw/character-names.csv`.
+- `export-character-name-references` writes a review CSV of every matched reference for one character name to `research/raw/character-name-references.csv`.
 - `export-text-surface-corpus` scans the whole ROM for dialogue-like ROTDD text runs and writes them to `research/raw/text-surfaces.csv`.
 - `export-text-surface-map` writes a contiguous text surface to `research/raw/text-surfaces.csv`.
+- `list-character-names` lists the canonical character names from the pointer table.
 - `list-known-text` lists mapped rows from the known ROTDD text tables.
 - `patch-known-text` patches one mapped text entry in a copied ROM while keeping the encoded text within the original byte budget.
+- `patch-character-name` performs a case-sensitive global rename across the canonical name table, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs such as short menu labels.
 - `patch-text-at-offset` patches one text run at a literal ROM offset while keeping the encoded text within the original byte budget.
 - `peek` prints a quick hex and ASCII view of a ROM region.
 
@@ -55,11 +59,15 @@ python scripts/rom_text_tools.py --rom path/to/your-rom.gba scan-rotdd-runs --st
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba find-pointer 0x1E0784
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba dump-pointer-table 0x56ED80 --count 16 --codec rotdd
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-known-text-map
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-character-name-map
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-character-name-references Mae
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-text-surface-corpus --min-len 24
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-text-surface-map --start 0x1765E3 --end 0x177B80
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-character-names --contains Mae
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-known-text --table item_names --contains Ring
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-known-text --category item --show-notes
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-known-text --table item_names --index 0 --output path/to/test-rom.gba "Magic   Herb"
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-character-name Mae Jade --output path/to/test-rom.gba
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-text-at-offset 0x001766AA "Max: Hyaaah!" --output path/to/test-rom.gba
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba peek 0x1DD5B0 --length 0x80
 ```
@@ -70,6 +78,11 @@ python scripts/rom_text_tools.py --rom path/to/your-rom.gba peek 0x1DD5B0 --leng
 - `0x10` decodes as a space
 - uppercase letters currently decode as byte `+ 0x16`
 - lowercase letters currently decode as byte `+ 0x19`
+- visible digits `0` through `5` are decoded from the surface codec instead of left as placeholders
+- `0x22` is decoded as a hyphen, which keeps compound words intact during export and patching
+
+Character-name work currently starts from the plain ASCII pointer table at `0x0056F578` and the ASCII name bank at `0x001E0688`.
+The global rename command also scans the known ROTDD text tables and the broader text-surface corpus for whole-name matches so visible references stay in sync.
 
 That mapping is strong enough to decode the spell and item bank around `0x1DD7E3` and the related pointer table around `0x56ED80`.
 
@@ -98,6 +111,7 @@ Prefer `--index` when possible. It is the safest selector when a table contains 
 `patch-text-at-offset` uses the same conservative byte-budget rule, but it works from a literal ROM offset instead of a mapped table row.
 - pass the offset and replacement as separate positional arguments
 - quote the replacement when it contains spaces or punctuation so the shell keeps it together as one argument
+- use `<QUOTE>` inside the replacement when you need a double quote
 - the tool will auto-wrap text on whole-word boundaries to the observed 35-character dialogue width when you do not supply explicit `<NEWLINE>` tags
 - if a short punctuated token would be orphaned at the end of a long line, the tool nudges it onto the next line instead of splitting it
 - `<PAGE_BREAK>` resets the three-row budget for the next page
@@ -106,6 +120,18 @@ Prefer `--index` when possible. It is the safest selector when a table contains 
 - if the wrapped text would need more than three visible rows on one page, the command fails instead of trying to overflow into other memory
 
 Both write commands accept `--in-place` if you intentionally want to overwrite the source ROM. That is unsafe and should only be used when you have a backup copy.
+Use `<QUOTE>` inside replacement text when you need a double quote.
+
+`patch-character-name` is different from the dialogue patchers:
+
+- it reads from the canonical name-pointer table instead of a dialogue row
+- it keeps short or equal-length replacements in place
+- if the replacement is longer, it repoints the name into the observed zero padding before the name bank
+- it also rewrites matching dialogue, menu labels, and other whole-name references that contain the old name
+- if a matched reference still does not fit, the tool reports it and leaves it for later repointing instead of forcing a bad write
+- duplicate live names are rejected so renames do not create collisions
+- repointed rows are allocated from safe free space above the ROM header, and each reserved span is tracked so one rename does not overwrite another
+- it still supports `--output` for a copied ROM and `--in-place` for an unsafe direct write
 
 The current confirmed surface encoder supports uppercase letters, lowercase letters, spaces, known punctuation, and the inline tags used in the corpus export. Keep that limit in mind when choosing replacement text.
 
@@ -124,7 +150,7 @@ The current confirmed surface encoder supports uppercase letters, lowercase lett
 
 - the output is written to `research/raw/text-surfaces.csv`
 - the CSV includes the ROM offset for each row
-- only the `decoded_text` column is quoted, so the file stays easy to read while still preserving commas and inline tags
+- the text columns are quoted, so the file stays easy to read while still preserving commas and inline tags
 - the CSV intentionally contains only human-readable text rows, not hex dumps
 - the dialogue/script pass keeps only rows with real word separation; the plain-ASCII pass catches readable names and title blocks
 - the extra ASCII pass is intentionally conservative and prefers word-like strings over raw printable noise

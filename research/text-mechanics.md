@@ -40,11 +40,20 @@ The currently confirmed parts of the ROTDD text codec are enough to decode and p
 - `0x10` is a space
 - uppercase letters decode as `byte + 0x16`
 - lowercase letters decode as `byte + 0x19`
+- visible digits also use one-byte glyphs in the surface codec:
+  - `0x11` is `0`
+  - `0x12` is `1`
+  - `0x13` is `2`
+  - `0x14` is `3`
+  - `0x15` is `4`
+  - `0x16` is `5`
 - `0x23` is a period
 - `0x25` is a colon
 - `0x29` is a question mark
 - `0x67` is a comma
 - `0x69` is an apostrophe
+- `0x22` is a hyphen and is exported as `-`
+- `0xB3` is a double quote, exported as `<QUOTE>`
 - `0x1B` is an exclamation mark
 
 Dialogue-surface control bytes that are currently confirmed:
@@ -53,6 +62,8 @@ Dialogue-surface control bytes that are currently confirmed:
 - `0x0A` is a newline
 - `0x0E` marks the next page from the same speaker
 - `0x03` marks a handoff to the next speaker
+
+Observed but not yet named dialogue bytes are preserved in the exported corpus when they appear inside otherwise readable text. Current examples include `0x02` and `0x05`, which appear to act like pauses or delays but are not yet confirmed, so they remain untranslated for now.
 
 Examples:
 

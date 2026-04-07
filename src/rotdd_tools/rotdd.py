@@ -29,6 +29,7 @@ ROTDD_PUNCTUATION = {
     0x29: "?",
     0x67: ",",
     0x69: "'",
+    0x22: "-",
     0x1B: "!",
 }
 ROTDD_PUNCTUATION_BY_CHAR = {value: key for key, value in ROTDD_PUNCTUATION.items()}
@@ -37,6 +38,14 @@ ROTDD_SURFACE_CONTROLS = {
     0x0A: "<NEWLINE>",
     0x0E: "<PAGE_BREAK>",
     0x03: "<SPEAKER_BREAK>",
+    # The dialogue corpus uses a compact digit block for visible numerals.
+    0x11: "0",
+    0x12: "1",
+    0x13: "2",
+    0x14: "3",
+    0x15: "4",
+    0x16: "5",
+    0xB3: "<QUOTE>",
 }
 ROTDD_SURFACE_CONTROLS_BY_TAG = {value: key for key, value in ROTDD_SURFACE_CONTROLS.items()}
 
@@ -46,7 +55,22 @@ ROTDD_SURFACE_CONTROLS_BY_TAG = {value: key for key, value in ROTDD_SURFACE_CONT
 ROTDD_SURFACE_UNKNOWN_CONTROLS = {
     0x02,
     0x05,
+    0x11,
+    0x12,
+    0x13,
+    0x14,
 }
+
+# Canonical character-name data currently comes from this plain-ASCII pointer
+# table. The first 32 rows cover the named playable and story characters.
+ROTDD_CHARACTER_NAME_POINTER_TABLE_OFFSET = 0x0056F578
+ROTDD_CHARACTER_NAME_COUNT = 33
+
+# Current repointing uses the observed zero padding that sits immediately
+# before the character-name bank. Keep this conservative so we do not invent
+# new free-space rules before we have broader evidence.
+ROTDD_CHARACTER_NAME_REPOINT_START = 0x001E0660
+ROTDD_CHARACTER_NAME_REPOINT_END = 0x001E0688
 
 # Observed from the current dialogue corpus export: the widest visible line is
 # 35 characters after tags are stripped. The box shows up to three stacked rows.

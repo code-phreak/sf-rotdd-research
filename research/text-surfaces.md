@@ -88,12 +88,15 @@ The current `export-text-surface-corpus` command writes one combined CSV to `res
 Current columns:
 
 - `row_index`
+- `source_kind`
 - `rom_offset`
 - `decoded_text`
 
+`source_kind` distinguishes confirmed ROTDD-script rows from plain ASCII surface rows so future rename and patch workflows can make the right encoder choice.
+
 The file intentionally stays text-only. Unknown bytes remain visible as placeholder tokens like `<XX>` until we map them.
 
-Only the `decoded_text` column is quoted. That keeps the file readable while still protecting commas and inline tags inside the text cell.
+The text columns are quoted. That keeps the file readable while still protecting commas and inline tags inside the text cells.
 
 Current dialogue-token conventions in the export:
 
@@ -101,6 +104,12 @@ Current dialogue-token conventions in the export:
 - `<PAGE_BREAK>` marks the next page of the same speaker
 - `<SPEAKER_BREAK>` marks a speaker handoff
 - `<PLAYER_NAME>` marks the stored player-name insertion point
+- `<QUOTE>` marks a double quote
+- visible digits `0` through `5` are decoded from the surface codec rather than left as placeholders
+- observed-but-unnamed in-dialogue bytes are preserved as placeholder tags when they occur inside readable rows, so the corpus stays contiguous without claiming a meaning we have not confirmed yet
+- the current read on `0x02` and `0x05` is that they behave like pauses or delays, but that is still unconfirmed, so they remain untranslated in the corpus for now
+- `0x22` is a hyphen and now decodes as `-`
+- the wrapper treats short punctuation-plus-quote tails as a unit so quote runs stay attached to the word they belong to during automatic wrapping
 
 The dialogue window shows a speaker prefix like `Varios:` when the scene calls for one. The current CSV captures the decoded ROM surface as it appears in bytes, so speaker names may appear in the decoded text when they are part of the underlying text run.
 

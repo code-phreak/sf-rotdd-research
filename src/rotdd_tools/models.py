@@ -45,5 +45,30 @@ class TextSurfaceRow:
     """One exported row from a contiguous text surface such as dialogue or script text."""
 
     row_index: int
+    source_kind: str
+    rom_offset: int
+    decoded_text: str
+
+
+@dataclass(frozen=True)
+class CharacterNameRow:
+    """One exported row from the canonical character-name pointer table."""
+
+    local_index: int
+    pointer_table_offset: int
+    pointer_value: int
+    name_rom_offset: int
+    name_length: int
+    decoded_name: str
+
+
+@dataclass(frozen=True)
+class CharacterNameReferenceRow:
+    """One exported row showing where a character name appears in the ROM."""
+
+    row_index: int
+    source_kind: str
+    source_label: str
+    source_index: int
     rom_offset: int
     decoded_text: str

@@ -46,11 +46,21 @@ We are starting with inventory and classification, not editing.
 - Identified a likely story or script text bank around `0x001765C0` and started separating it from the menu/debug text surfaces.
 - Confirmed a sample from `0x08176750` decodes into dialogue-like text with the known ROTDD letter/space mapping plus additional control bytes.
 - Confirmed dialogue punctuation and control mappings for comma, colon, apostrophe, period, question mark, exclamation mark, newline, player name insertion, page break, and speaker handoff.
+- Confirmed `0xB3` as the dialogue double quote and represented it in exports as `<QUOTE>`.
+- Confirmed the visible digit glyphs `0x11` through `0x16` as `0` through `5`.
+- Confirmed `0x22` as a visible hyphen in dialogue and corpus exports.
+- Noted `0x02` and `0x05` as likely pause/delay bytes, but left them untranslated for now.
 - Kept the combined CSV export path for contiguous text surfaces so the opening dialogue bank can be mapped row by row before scene breakpoints are known.
+- Started the character-attribute track with canonical character names: pointer table at `0x0056F578`, ASCII bank at `0x001E0688`, exported to `research/raw/character-names.csv`.
+- Added a character-name reference export at `research/raw/character-name-references.csv` so global rename work can be reviewed before writing.
+- Confirmed `Mawlock` is the 33rd canonical name row and widened the canonical export to include it.
+- Upgraded `patch-character-name` from a pointer-table-only edit to a case-sensitive global rename across the canonical name table, matched text references, and short whole-name ROTDD surface runs such as menu labels.
+- Tightened the rename repointing fallback so it uses safe free space above the ROM header and tracks reserved spans to avoid collisions during one rename pass.
+- Added a duplicate-name guard so rename targets cannot collide with an existing live canonical name.
 - Confirmed the dialogue window shows a speaker prefix such as `Varios:` in the opening scene.
 - Corrected the opening surface anchor to include the full first visible speaker prefix at `0x001765DC`.
 - Switched dialogue-surface newline handling to inline `<NEWLINE>` tags so the CSV stays single-line per row.
-- Added a whole-ROM dialogue-like corpus export and generated a first-pass CSV with 4,600 rows for later human splitting and translation.
+- Added a whole-ROM dialogue-like corpus export and regenerated the CSV so dialogue rows stay contiguous around observed control bytes.
 - Added `patch-text-at-offset` for literal-offset replacement work within the original byte budget and exposed `--in-place` for deliberate unsafe writes.
 - Established an observed dialogue wrapping rule of 35 visible characters per line and up to 3 visible rows per box for automatic formatting.
 

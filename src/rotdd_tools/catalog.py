@@ -18,9 +18,11 @@ from .gba import (
     printable_ascii,
     read_terminated_string,
 )
-from .models import TextMapRow, TextSurfaceRow
+from .models import CharacterNameReferenceRow, CharacterNameRow, TextMapRow, TextSurfaceRow
 from .rotdd import (
     GAME_SLUG,
+    ROTDD_CHARACTER_NAME_COUNT,
+    ROTDD_CHARACTER_NAME_POINTER_TABLE_OFFSET,
     KNOWN_TEXT_TABLES,
     ROTDD_TERMINATOR,
     decode_rotdd_bytes,
@@ -160,6 +162,35 @@ def export_known_text_map(data: bytes) -> list[TextMapRow]:
     return exported
 
 
+def export_character_name_map(data: bytes) -> list[CharacterNameRow]:
+    """
+    Export the canonical character-name pointer table.
+
+    The names themselves are plain ASCII, but the live lookup structure is a
+    pointer table. Keeping both the pointer and the resolved ROM offset in the
+    export makes it easier to audit repointing work later.
+    """
+
+    exported: list[CharacterNameRow] = []
+    for local_index in range(ROTDD_CHARACTER_NAME_COUNT):
+        pointer_table_offset = ROTDD_CHARACTER_NAME_POINTER_TABLE_OFFSET + (local_index * 4)
+        pointer_value = int.from_bytes(data[pointer_table_offset:pointer_table_offset + 4], "little")
+        name_rom_offset = pointer_to_rom_offset(pointer_value, base=GBA_ROM_BASE)
+        raw = read_terminated_string(data, name_rom_offset, terminator=0x00)
+        decoded_name = raw.decode("ascii", errors="strict")
+        exported.append(
+            CharacterNameRow(
+                local_index=local_index,
+                pointer_table_offset=pointer_table_offset,
+                pointer_value=pointer_value,
+                name_rom_offset=name_rom_offset,
+                name_length=len(raw),
+                decoded_name=decoded_name,
+            )
+        )
+    return exported
+
+
 def write_text_map_csv(rows: list[TextMapRow], output_path: Path) -> None:
     """Write the structured text map to disk."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -199,6 +230,30 @@ def write_text_map_csv(rows: list[TextMapRow], output_path: Path) -> None:
                 )
 
 
+def write_character_name_csv(rows: list[CharacterNameRow], output_path: Path) -> None:
+    """Write the canonical character-name map to disk."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "local_index",
+        "pointer_table_offset",
+        "pointer_value",
+        "name_rom_offset",
+        "name_length",
+        "decoded_name",
+    ]
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        handle.write(",".join(fieldnames) + "\n")
+        for row in rows:
+            handle.write(
+                f"{row.local_index},"
+                f"0x{row.pointer_table_offset:08X},"
+                f"0x{row.pointer_value:08X},"
+                f"0x{row.name_rom_offset:08X},"
+                f"{row.name_length},"
+                f"{csv_quote_text(row.decoded_name)}\n"
+            )
+
+
 def export_text_surface_map(
     data: bytes,
     start: int,
@@ -226,6 +281,7 @@ def export_text_surface_map(
             exported.append(
                 TextSurfaceRow(
                     row_index=row_index,
+                    source_kind="rotdd",
                     rom_offset=index,
                     decoded_text=decode_rotdd_bytes(raw),
                 )
@@ -271,6 +327,7 @@ def export_text_surface_corpus(
         exported.append(
             TextSurfaceRow(
                 row_index=row_index,
+                source_kind="rotdd",
                 rom_offset=run_start,
                 decoded_text=decoded_text,
             )
@@ -305,6 +362,7 @@ def export_text_surface_corpus(
         exported.append(
             TextSurfaceRow(
                 row_index=row_index,
+                source_kind="ascii",
                 rom_offset=run_start,
                 decoded_text=text,
             )
@@ -317,12 +375,198 @@ def export_text_surface_corpus(
 def write_text_surface_csv(rows: list[TextSurfaceRow], output_path: Path) -> None:
     """Write contiguous text-surface rows to disk."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["row_index", "rom_offset", "decoded_text"]
+    fieldnames = ["row_index", "source_kind", "rom_offset", "decoded_text"]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         handle.write(",".join(fieldnames) + "\n")
         for row in rows:
             handle.write(
                 f"{row.row_index},"
+                f"{csv_quote_text(row.source_kind)},"
+                f"0x{row.rom_offset:08X},"
+                f"{csv_quote_text(row.decoded_text)}\n"
+            )
+
+
+def export_character_name_references(
+    data: bytes,
+    current_name: str,
+) -> list[CharacterNameReferenceRow]:
+    """
+    Export every current-name reference we can confidently see in the ROM.
+
+    The resulting CSV is intended as a review artifact before a global rename.
+    It includes the canonical name table, known pointer-table text, and the
+    broader text-surface corpus.
+    """
+
+    exported: list[CharacterNameReferenceRow] = []
+    row_index = 0
+    seen_offsets: set[int] = set()
+    pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
+
+    canonical_rows = export_character_name_map(data)
+    for row in canonical_rows:
+        if row.decoded_name != current_name:
+            continue
+        if row.name_rom_offset in seen_offsets:
+            continue
+        exported.append(
+            CharacterNameReferenceRow(
+                row_index=row_index,
+                source_kind="canonical_name",
+                source_label="character-name-table",
+                source_index=row.local_index,
+                rom_offset=row.name_rom_offset,
+                decoded_text=row.decoded_name,
+            )
+        )
+        seen_offsets.add(row.name_rom_offset)
+        row_index += 1
+
+    known_rows = export_known_text_map(data)
+    for row in known_rows:
+        if not pattern.search(row.decoded_text):
+            continue
+        if row.text_rom_offset in seen_offsets:
+            continue
+        exported.append(
+            CharacterNameReferenceRow(
+                row_index=row_index,
+                source_kind="known_text",
+                source_label=row.table_slug,
+                source_index=row.local_index,
+                rom_offset=row.text_rom_offset,
+                decoded_text=row.decoded_text,
+            )
+        )
+        seen_offsets.add(row.text_rom_offset)
+        row_index += 1
+
+    surface_rows = export_text_surface_corpus(data)
+    for row in surface_rows:
+        if not pattern.search(row.decoded_text):
+            continue
+        if row.rom_offset in seen_offsets:
+            continue
+        exported.append(
+            CharacterNameReferenceRow(
+                row_index=row_index,
+                source_kind="text_surface",
+                source_label=row.source_kind,
+                source_index=row.row_index,
+                rom_offset=row.rom_offset,
+                decoded_text=row.decoded_text,
+            )
+        )
+        seen_offsets.add(row.rom_offset)
+        row_index += 1
+
+    for run_start, _run_bytes, decoded_text in iter_rotdd_surface_runs(data):
+        if run_start in seen_offsets:
+            continue
+        terminated_raw = read_terminated_string(data, run_start, terminator=ROTDD_TERMINATOR)
+        terminated_text = decode_rotdd_bytes(terminated_raw)
+        if not pattern.search(terminated_text):
+            continue
+
+        exported.append(
+            CharacterNameReferenceRow(
+                row_index=row_index,
+                source_kind="rotdd_surface_run",
+                source_label="surface-run",
+                source_index=run_start,
+                rom_offset=run_start,
+                decoded_text=terminated_text,
+            )
+        )
+        seen_offsets.add(run_start)
+        row_index += 1
+
+    ascii_index = 0
+    limit = len(data)
+    while ascii_index < limit:
+        if not printable_ascii(data[ascii_index]):
+            ascii_index += 1
+            continue
+
+        run_start = ascii_index
+        run: list[int] = []
+        while ascii_index < limit and printable_ascii(data[ascii_index]):
+            run.append(data[ascii_index])
+            ascii_index += 1
+
+        text = bytes(run).decode("ascii", errors="replace")
+        if not pattern.search(text):
+            continue
+        if run_start in seen_offsets:
+            continue
+
+        exported.append(
+            CharacterNameReferenceRow(
+                row_index=row_index,
+                source_kind="ascii_surface",
+                source_label="printable_ascii",
+                source_index=run_start,
+                rom_offset=run_start,
+                decoded_text=text,
+            )
+        )
+        seen_offsets.add(run_start)
+        row_index += 1
+
+    return exported
+
+
+def iter_rotdd_surface_runs(data: bytes):
+    """
+    Yield every contiguous run that uses only the confirmed ROTDD surface alphabet.
+
+    This is broader than the curated corpus export because it intentionally keeps
+    short labels and menu entries that do not meet the dialogue-like length
+    threshold. It is useful when a global rename needs to touch every visible
+    surface, not just story dialogue.
+    """
+
+    index = 0
+    limit = len(data)
+
+    while index < limit:
+        if not is_known_rotdd_surface_byte(data[index]):
+            index += 1
+            continue
+
+        run_start = index
+        run: list[int] = []
+        while index < limit and is_known_rotdd_surface_byte(data[index]):
+            run.append(data[index])
+            index += 1
+
+        if run:
+            yield run_start, bytes(run), decode_rotdd_bytes(bytes(run))
+
+
+def write_character_name_references_csv(
+    rows: list[CharacterNameReferenceRow],
+    output_path: Path,
+) -> None:
+    """Write the current-name reference map to disk."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "row_index",
+        "source_kind",
+        "source_label",
+        "source_index",
+        "rom_offset",
+        "decoded_text",
+    ]
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        handle.write(",".join(fieldnames) + "\n")
+        for row in rows:
+            handle.write(
+                f"{row.row_index},"
+                f"{csv_quote_text(row.source_kind)},"
+                f"{csv_quote_text(row.source_label)},"
+                f"{row.source_index},"
                 f"0x{row.rom_offset:08X},"
                 f"{csv_quote_text(row.decoded_text)}\n"
             )
