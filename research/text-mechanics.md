@@ -40,12 +40,39 @@ The currently confirmed parts of the ROTDD text codec are enough to decode and p
 - `0x10` is a space
 - uppercase letters decode as `byte + 0x16`
 - lowercase letters decode as `byte + 0x19`
+- `0x23` is a period
+- `0x25` is a colon
+- `0x29` is a question mark
+- `0x67` is a comma
+- `0x69` is an apostrophe
+- `0x1B` is an exclamation mark
+
+Dialogue-surface control bytes that are currently confirmed:
+
+- `0x09` inserts the stored player name
+- `0x0A` is a newline
+- `0x0E` marks the next page from the same speaker
+- `0x03` marks a handoff to the next speaker
 
 Examples:
 
 - `Heal` encodes to `32 4C 48 53`
 - `Blaze` encodes to `2C 53 48 61 4C`
 - `Flare` encodes to `30 53 48 59 4C`
+
+Dialogue example from the opening scene:
+
+- `Now then, <PLAYER_NAME>,`
+- `attack me any way you like.`
+- `Give it all you've got!`
+
+The dialogue window also shows a speaker prefix such as `Varios:` when the scene calls for one. The exported surface CSV records the decoded text bytes we can see in ROM, and the prefix may appear in the decoded string when it is part of that surface.
+
+The dialogue-surface export uses inline tags instead of raw newlines:
+
+- `0x0A` becomes `<NEWLINE>`
+- `0x0E` becomes `<PAGE_BREAK>`
+- `0x03` becomes `<SPEAKER_BREAK>`
 
 Characters outside the currently confirmed letter-and-space set should still be treated carefully until they are mapped explicitly.
 
@@ -76,11 +103,10 @@ The first successful validation pass used in-place editing of an item name and c
 
 ### What is safe right now
 
-- same-length replacement
-- shorter replacement if the original `0x00` terminator is preserved correctly
+- replacement that stays within the original byte budget
 - testing on a copy of the ROM
 
-The repository tooling now supports this same conservative workflow directly through `patch-known-text`, but it still enforces a copied-ROM output and same-length replacement only.
+The repository tooling now supports this same conservative workflow directly through `patch-known-text` and `patch-text-at-offset`, but it still keeps replacements within the original byte budget unless you deliberately opt into `--in-place`.
 
 ### What is not safe yet
 
@@ -101,7 +127,7 @@ This is the current best practice for validating a text edit.
 
 This workflow already worked for an inventory item name and is a reliable first pass before deeper repointing work.
 
-The script currently only supports replacement text that fits the known ROTDD letter-and-space codec.
+The script currently only supports replacement text that fits the known ROTDD letter-and-space codec and the current dialogue-box budget.
 
 ## Suggested breakpoint strategy
 

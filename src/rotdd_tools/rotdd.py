@@ -23,6 +23,35 @@ ROTDD_UPPERCASE_MIN = 0x2B
 ROTDD_UPPERCASE_MAX = 0x44
 ROTDD_LOWERCASE_MIN = 0x48
 ROTDD_LOWERCASE_MAX = 0x63
+ROTDD_PUNCTUATION = {
+    0x23: ".",
+    0x25: ":",
+    0x29: "?",
+    0x67: ",",
+    0x69: "'",
+    0x1B: "!",
+}
+ROTDD_PUNCTUATION_BY_CHAR = {value: key for key, value in ROTDD_PUNCTUATION.items()}
+ROTDD_SURFACE_CONTROLS = {
+    0x09: "<PLAYER_NAME>",
+    0x0A: "<NEWLINE>",
+    0x0E: "<PAGE_BREAK>",
+    0x03: "<SPEAKER_BREAK>",
+}
+ROTDD_SURFACE_CONTROLS_BY_TAG = {value: key for key, value in ROTDD_SURFACE_CONTROLS.items()}
+
+# The dialogue/script surfaces we have seen also use a few bytes that are not
+# fully translated yet. Keep them in the discovery alphabet so the scanner does
+# not split strings at those boundaries.
+ROTDD_SURFACE_UNKNOWN_CONTROLS = {
+    0x02,
+    0x05,
+}
+
+# Observed from the current dialogue corpus export: the widest visible line is
+# 35 characters after tags are stripped. The box shows up to three stacked rows.
+ROTDD_DIALOGUE_LINE_WIDTH = 35
+ROTDD_DIALOGUE_VISIBLE_ROWS = 3
 
 KNOWN_TEXT_TABLES = [
     KnownTextTable(
@@ -76,15 +105,77 @@ def encode_rotdd_text(text: str) -> bytes:
     return bytes(encode_rotdd_char(char) for char in text)
 
 
+def encode_rotdd_surface_text(text: str) -> bytes:
+    """
+    Encode a text string that may include known inline tags.
+
+    This is the right encoder for CSV-editable text because it preserves the
+    same visible tokens that the corpus exporter emits.
+    """
+
+    encoded = bytearray()
+    index = 0
+    limit = len(text)
+    while index < limit:
+        char = text[index]
+        if char == "<":
+            close = text.find(">", index + 1)
+            if close == -1:
+                raise ValueError(f"Unterminated inline tag in text: {text!r}")
+            tag = text[index : close + 1]
+            if tag in ROTDD_SURFACE_CONTROLS_BY_TAG:
+                encoded.append(ROTDD_SURFACE_CONTROLS_BY_TAG[tag])
+                index = close + 1
+                continue
+            raw_hex = tag[1:-1]
+            if len(raw_hex) == 2:
+                try:
+                    encoded.append(int(raw_hex, 16))
+                    index = close + 1
+                    continue
+                except ValueError as exc:
+                    raise ValueError(f"Unsupported inline tag in text: {tag!r}") from exc
+            raise ValueError(f"Unsupported inline tag in text: {tag!r}")
+        if char in ROTDD_PUNCTUATION_BY_CHAR:
+            encoded.append(ROTDD_PUNCTUATION_BY_CHAR[char])
+        else:
+            encoded.append(encode_rotdd_char(char))
+        index += 1
+    return bytes(encoded)
+
+
 def decode_rotdd_byte(byte: int) -> str:
     """Decode one byte from the known ROTDD table."""
     if byte == ROTDD_SPACE:
         return " "
+    if byte in ROTDD_PUNCTUATION:
+        return ROTDD_PUNCTUATION[byte]
+    if byte in ROTDD_SURFACE_CONTROLS:
+        return ROTDD_SURFACE_CONTROLS[byte]
     if ROTDD_UPPERCASE_MIN <= byte <= ROTDD_UPPERCASE_MAX:
         return chr(byte + ROTDD_UPPERCASE_SHIFT)
     if ROTDD_LOWERCASE_MIN <= byte <= ROTDD_LOWERCASE_MAX:
         return chr(byte + ROTDD_LOWERCASE_SHIFT)
     return f"<{byte:02X}>"
+
+
+def is_known_rotdd_text_byte(byte: int) -> bool:
+    """Return True when a byte belongs to the currently confirmed text alphabet."""
+    return (
+        byte == ROTDD_SPACE
+        or ROTDD_UPPERCASE_MIN <= byte <= ROTDD_UPPERCASE_MAX
+        or ROTDD_LOWERCASE_MIN <= byte <= ROTDD_LOWERCASE_MAX
+    )
+
+
+def is_known_rotdd_surface_byte(byte: int) -> bool:
+    """Return True when a byte looks like part of ROTDD dialogue or script text."""
+    return (
+        is_known_rotdd_text_byte(byte)
+        or byte in ROTDD_PUNCTUATION
+        or byte in ROTDD_SURFACE_CONTROLS
+        or byte in ROTDD_SURFACE_UNKNOWN_CONTROLS
+    )
 
 
 def decode_rotdd_bytes(chunk: bytes) -> str:

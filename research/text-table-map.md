@@ -55,6 +55,8 @@ The text-map file gives us a stable handoff point between research and tooling.
 
 The CLI now also exposes the same mapped data through `list-known-text`, which is useful when you want to browse targets quickly without opening the CSV directly.
 
+`list-known-text` can narrow the browse set by table, category, substring match, and optional notes display.
+
 ## Current editing workflow
 
 The repo now supports safe same-length patching driven by known table rows.

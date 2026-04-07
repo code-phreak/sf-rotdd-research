@@ -38,3 +38,12 @@ class TextMapRow:
     codec: str
     decoded_text: str
     notes: str
+
+
+@dataclass(frozen=True)
+class TextSurfaceRow:
+    """One exported row from a contiguous text surface such as dialogue or script text."""
+
+    row_index: int
+    rom_offset: int
+    decoded_text: str

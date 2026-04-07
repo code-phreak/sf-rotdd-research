@@ -6,11 +6,23 @@ import argparse
 import sys
 from pathlib import Path
 
-from .catalog import export_known_text_map, write_text_map_csv
-from .editing import patch_known_text
+from .catalog import (
+    export_known_text_map,
+    export_text_surface_corpus,
+    export_text_surface_map,
+    write_text_map_csv,
+    write_text_surface_csv,
+)
+from .editing import patch_known_text, patch_text_at_offset
 from .gba import GBA_ROM_BASE, format_ascii, iter_find_all, printable_ascii, read_terminated_string
 from .paths import REPO_ROOT, resolve_rom_path
-from .rotdd import KNOWN_TEXT_TABLES, decode_rotdd_bytes, encode_rotdd_text
+from .rotdd import (
+    KNOWN_TEXT_TABLES,
+    decode_rotdd_bytes,
+    encode_rotdd_surface_text,
+    encode_rotdd_text,
+    is_known_rotdd_text_byte,
+)
 
 
 def parse_int(value: str) -> int:
@@ -40,7 +52,7 @@ def search_term(data: bytes, term: str, encodings: list[str]) -> int:
 
 def print_rotdd_encoding(text: str) -> None:
     """Print the encoded bytes for manual ROM patching."""
-    encoded = encode_rotdd_text(text)
+    encoded = encode_rotdd_surface_text(text)
     print(text)
     print(" ".join(f"{byte:02X}" for byte in encoded))
 
@@ -101,6 +113,30 @@ def dump_rotdd(data: bytes, start: int, end: int, min_len: int, contains: str | 
     return count
 
 
+def scan_rotdd_candidates(data: bytes, start: int, end: int, min_len: int) -> int:
+    """Scan for contiguous runs that use only the confirmed ROTDD text alphabet."""
+    count = 0
+    index = start
+    limit = min(end, len(data))
+    while index < limit:
+        if not is_known_rotdd_text_byte(data[index]):
+            index += 1
+            continue
+
+        run_start = index
+        run: list[int] = []
+        while index < limit and is_known_rotdd_text_byte(data[index]):
+            run.append(data[index])
+            index += 1
+
+        if len(run) >= min_len:
+            text = decode_rotdd_bytes(bytes(run))
+            print(f"{run_start:#010x} len={len(run):>3} {text}")
+            count += 1
+
+    return count
+
+
 def decode_at_offset(data: bytes, offset: int, codec: str) -> str:
     """Decode a null-terminated string from a ROM offset using the requested codec."""
     raw = read_terminated_string(data, offset)
@@ -156,9 +192,23 @@ def run_export_known_text_map(data: bytes, output: Path) -> None:
     print(f"Wrote {len(rows)} rows to {output_path}")
 
 
+def run_export_text_surface_map(
+    data: bytes,
+    start: int,
+    end: int,
+    output: Path,
+) -> None:
+    """Export a contiguous text surface to a research CSV artifact."""
+    rows = export_text_surface_map(data=data, start=start, end=end)
+    output_path = output if output.is_absolute() else (REPO_ROOT / output)
+    write_text_surface_csv(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
 def run_list_known_text(
     data: bytes,
     table_slug: str | None,
+    category: str | None,
     contains: str | None,
     limit: int | None,
     show_notes: bool,
@@ -168,6 +218,8 @@ def run_list_known_text(
 
     if table_slug is not None:
         rows = [row for row in rows if row.table_slug == table_slug]
+    if category is not None:
+        rows = [row for row in rows if row.category == category]
     if contains is not None:
         needle = contains.lower()
         rows = [row for row in rows if needle in row.decoded_text.lower()]
@@ -177,6 +229,7 @@ def run_list_known_text(
     for row in rows:
         line = (
             f"{row.table_slug:<28} "
+            f"{row.category:<20} "
             f"{row.local_index:>3} "
             f"ptr=0x{row.pointer_table_offset:08X} "
             f"rom=0x{row.text_rom_offset:08X} "
@@ -199,8 +252,9 @@ def run_patch_known_text(
     replacement_text: str,
     output: Path | None,
     overwrite: bool,
+    in_place: bool,
 ) -> None:
-    """Patch a known text entry in a copied ROM and report what changed."""
+    """Patch a known text entry and report what changed."""
     output_path = None
     if output is not None:
         output_path = output if output.is_absolute() else (REPO_ROOT / output)
@@ -215,6 +269,7 @@ def run_patch_known_text(
         replacement_text=replacement_text,
         output_path=output_path,
         overwrite=overwrite,
+        in_place=in_place,
     )
 
     print(f"Patched table: {row.table_slug}")
@@ -224,7 +279,44 @@ def run_patch_known_text(
     print(f"ROM offset: 0x{row.text_rom_offset:08X}")
     print(f"Pointer-table offset: 0x{row.pointer_table_offset:08X}")
     print(f"Encoded bytes: {' '.join(f'{byte:02X}' for byte in replacement_bytes)}")
-    print(f"Wrote patched ROM: {final_output_path}")
+    if in_place:
+        print(f"Patched source ROM in place: {final_output_path}")
+    else:
+        print(f"Wrote patched ROM: {final_output_path}")
+
+
+def run_patch_text_at_offset(
+    data: bytes,
+    rom_path: Path,
+    rom_offset: int,
+    replacement_text: str,
+    output: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> None:
+    """Patch an arbitrary ROM offset using a simple address + text form."""
+    output_path = None
+    if output is not None:
+        output_path = output if output.is_absolute() else (REPO_ROOT / output)
+
+    original_text, replacement_bytes, final_output_path = patch_text_at_offset(
+        data=data,
+        source_path=rom_path,
+        rom_offset=rom_offset,
+        replacement_text=replacement_text,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+
+    print(f"ROM offset: 0x{rom_offset:08X}")
+    print(f"Original text: {original_text}")
+    print(f"Replacement: {replacement_text}")
+    print(f"Encoded bytes: {' '.join(f'{byte:02X}' for byte in replacement_bytes)}")
+    if in_place:
+        print(f"Patched source ROM in place: {final_output_path}")
+    else:
+        print(f"Wrote patched ROM: {final_output_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -285,6 +377,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rotdd_dump_parser.add_argument("--contains", help="Only print decoded strings containing this substring.")
 
+    rotdd_scan_parser = subparsers.add_parser(
+        "scan-rotdd-runs",
+        help="Scan for contiguous runs that use only the confirmed ROTDD text alphabet.",
+    )
+    rotdd_scan_parser.add_argument("--start", type=parse_int, default=0, help="Start ROM offset.")
+    rotdd_scan_parser.add_argument("--end", type=parse_int, default=0x800000, help="End ROM offset.")
+    rotdd_scan_parser.add_argument(
+        "--min-len",
+        type=int,
+        default=4,
+        help="Minimum run length in bytes.",
+    )
+
     pointer_parser = subparsers.add_parser(
         "find-pointer",
         help="Search for a GBA ROM pointer to a target offset.",
@@ -317,6 +422,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output CSV path, relative to the repository root by default.",
     )
 
+    surface_export_parser = subparsers.add_parser(
+        "export-text-surface-map",
+        help="Export a contiguous text surface to a CSV artifact.",
+    )
+    surface_export_parser.add_argument("--start", type=parse_int, required=True, help="Start ROM offset.")
+    surface_export_parser.add_argument("--end", type=parse_int, required=True, help="End ROM offset.")
+    surface_export_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("research/raw/text-surfaces.csv"),
+        help="Output CSV path, relative to the repository root by default.",
+    )
+
+    surface_corpus_parser = subparsers.add_parser(
+        "export-text-surface-corpus",
+        help="Export a whole-ROM corpus of dialogue-like ROTDD text runs.",
+    )
+    surface_corpus_parser.add_argument(
+        "--min-len",
+        type=int,
+        default=24,
+        help="Minimum run length in bytes before a candidate is kept.",
+    )
+    surface_corpus_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("research/raw/text-surfaces.csv"),
+        help="Output CSV path, relative to the repository root by default.",
+    )
+
     list_parser = subparsers.add_parser(
         "list-known-text",
         help="List mapped rows from the current known ROTDD text tables.",
@@ -325,6 +460,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--table",
         choices=[table.slug for table in KNOWN_TEXT_TABLES],
         help="Only list rows from one known table.",
+    )
+    list_parser.add_argument(
+        "--category",
+        choices=sorted({table.category for table in KNOWN_TEXT_TABLES}),
+        help="Only list rows from one table category.",
     )
     list_parser.add_argument(
         "--contains",
@@ -380,6 +520,40 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Allow the output file to be overwritten if it already exists.",
     )
+    patch_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+    patch_offset_parser = subparsers.add_parser(
+        "patch-text-at-offset",
+        help="Patch a same-length ROTDD text run at a literal ROM offset.",
+    )
+    patch_offset_parser.add_argument(
+        "offset",
+        type=parse_int,
+        help="Literal ROM offset to patch.",
+    )
+    patch_offset_parser.add_argument(
+        "replacement",
+        help="Replacement text. Quote it when it contains spaces or punctuation.",
+    )
+    patch_offset_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    patch_offset_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    patch_offset_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
 
     peek_parser = subparsers.add_parser("peek", help="Hex and ASCII preview of a ROM region.")
     peek_parser.add_argument("offset", type=parse_int, help="ROM offset to preview.")
@@ -408,6 +582,8 @@ def main() -> int:
         return 0 if dump_strings(data, args.start, args.end, args.min_len, args.contains) else 1
     if args.command == "dump-rotdd":
         return 0 if dump_rotdd(data, args.start, args.end, args.min_len, args.contains) else 1
+    if args.command == "scan-rotdd-runs":
+        return 0 if scan_rotdd_candidates(data, args.start, args.end, args.min_len) else 1
     if args.command == "find-pointer":
         return 0 if find_pointer(data, args.offset, args.base) else 1
     if args.command == "dump-pointer-table":
@@ -416,8 +592,22 @@ def main() -> int:
     if args.command == "export-known-text-map":
         run_export_known_text_map(data, args.output)
         return 0
+    if args.command == "export-text-surface-map":
+        run_export_text_surface_map(
+            data=data,
+            start=args.start,
+            end=args.end,
+            output=args.output,
+        )
+        return 0
+    if args.command == "export-text-surface-corpus":
+        rows = export_text_surface_corpus(data=data, min_len=args.min_len)
+        output_path = args.output if args.output.is_absolute() else (REPO_ROOT / args.output)
+        write_text_surface_csv(rows, output_path)
+        print(f"Wrote {len(rows)} rows to {output_path}")
+        return 0
     if args.command == "list-known-text":
-        return 0 if run_list_known_text(data, args.table, args.contains, args.limit, args.show_notes) else 1
+        return 0 if run_list_known_text(data, args.table, args.category, args.contains, args.limit, args.show_notes) else 1
     if args.command == "patch-known-text":
         run_patch_known_text(
             data=data,
@@ -429,6 +619,18 @@ def main() -> int:
             replacement_text=args.replacement,
             output=args.output,
             overwrite=args.overwrite,
+            in_place=args.in_place,
+        )
+        return 0
+    if args.command == "patch-text-at-offset":
+        run_patch_text_at_offset(
+            data=data,
+            rom_path=rom_path,
+            rom_offset=args.offset,
+            replacement_text=args.replacement,
+            output=args.output,
+            overwrite=args.overwrite,
+            in_place=args.in_place,
         )
         return 0
     if args.command == "peek":
