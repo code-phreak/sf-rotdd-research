@@ -63,7 +63,6 @@ Current confirmed leads:
 - character names exist in a plain ASCII bank
 - the confirmed class-name slice and enemy-name slice are partial ROTDD text tables that can be browsed and renamed with the same API-style command shape
 - the canonical character-name table is a plain ASCII pointer table at `0x0056F578`
-- `Mawlock` is part of the canonical character-name table and should remain tracked
 - a pointer table around `0x0056ED80` resolves spell and item names
 - a whole-ROM dialogue-like corpus can be exported to `research/raw/text-surfaces.csv`
 - a narrower contiguous dialogue/script excerpt export remains available for known ROM ranges
