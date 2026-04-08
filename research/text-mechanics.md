@@ -10,7 +10,7 @@ Two different text representations are currently confirmed in the ROM.
 
 ### Plain ASCII bank
 
-Enemy and character names appear in plain ASCII around `0x001E0700`.
+Character names appear in plain ASCII around `0x001E0700`.
 
 Confirmed examples:
 
@@ -31,6 +31,34 @@ Confirmed examples:
 - `Healing Seed` at `0x001DD953`
 
 This bank is not visible through plain ASCII or UTF-16 text search.
+
+### Class-name table
+
+Class names are stored in the first slice of the partial ROTDD table around `0x0056F000`.
+
+Confirmed examples include:
+
+- `Swordsman`
+- `Knight`
+- `Warrior`
+- `Mage`
+- `Monk`
+
+This is the class-name source, not an enemy roster list.
+
+### Enemy-name table
+
+Enemy names are stored in the second slice of the same partial ROTDD table around `0x0056F09C`.
+
+Confirmed examples include:
+
+- `Goblin`
+- `Bowrider`
+- `Rune Knight`
+- `Silver KT`
+- `Dullahan`
+
+This is the enemy-name source, not a monster roster list. The confirmed slice currently runs through `Soul Eater` before the next text block begins, and the current export now covers 79 enemy-name rows.
 
 ## Confirmed codec rules
 
@@ -99,7 +127,7 @@ Confirmed entries:
 - `0x0056EDE0 -> 0x001DD875 -> Blaze`
 - `0x0056EE5C -> 0x001DD946 -> Medical Herb`
 
-The current structured export of these tables lives in `research/raw/text-map.csv`.
+ The current structured exports for these tables live in the split raw name CSVs under `research/raw/`, one file per entity type.
 
 This means the working lookup path is at least:
 
@@ -117,7 +145,7 @@ The first successful validation pass used in-place editing of an item name and c
 - replacement that stays within the original byte budget
 - testing on a copy of the ROM
 
-The repository tooling now supports this same conservative workflow directly through `patch-known-text` and `patch-text-at-offset`, but it still keeps replacements within the original byte budget unless you deliberately opt into `--in-place`.
+The repository tooling now supports this same conservative workflow directly through `patch-known-text`, `patch-character-name`, `patch-class-name`, `patch-enemy-name`, `patch-item-name`, `patch-npc-name`, `patch-text-at-offset`, and the `character <name> rename <replacement>` / `class <name> rename <replacement>` / `enemy <name> rename <replacement>` / `item <name> rename <replacement>` / `npc <name> rename <replacement>` command shapes, but it still keeps replacements within the original byte budget unless you deliberately opt into `--in-place`.
 
 ### What is not safe yet
 

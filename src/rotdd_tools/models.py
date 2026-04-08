@@ -72,3 +72,15 @@ class CharacterNameReferenceRow:
     source_index: int
     rom_offset: int
     decoded_text: str
+
+
+@dataclass(frozen=True)
+class NpcNameRow:
+    """One exported row for a dialogue speaker or NPC-style visible name."""
+
+    row_index: int
+    speaker_name: str
+    occurrence_count: int
+    first_source_index: int
+    first_rom_offset: int
+    example_text: str

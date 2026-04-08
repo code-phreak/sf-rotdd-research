@@ -14,15 +14,19 @@ from pathlib import Path
 
 from .gba import (
     GBA_ROM_BASE,
+    iter_find_all,
     pointer_to_rom_offset,
     printable_ascii,
     read_terminated_string,
 )
-from .models import CharacterNameReferenceRow, CharacterNameRow, TextMapRow, TextSurfaceRow
+from .models import CharacterNameRow, NpcNameRow, TextMapRow, TextSurfaceRow
 from .rotdd import (
     GAME_SLUG,
     ROTDD_CHARACTER_NAME_COUNT,
     ROTDD_CHARACTER_NAME_POINTER_TABLE_OFFSET,
+    ROTDD_CLASS_NAME_TABLE_SLUG,
+    ROTDD_ENEMY_NAME_TABLE_SLUG,
+    ROTDD_ITEM_NAME_TABLE_SLUG,
     KNOWN_TEXT_TABLES,
     ROTDD_TERMINATOR,
     decode_rotdd_bytes,
@@ -30,14 +34,47 @@ from .rotdd import (
 )
 
 
-def csv_quote_text(value: str) -> str:
-    """Quote only the decoded text column for stable, readable CSV output."""
-    return '"' + value.replace('"', '""') + '"'
-
-
 def strip_surface_tags(text: str) -> str:
     """Remove inline <TAG> markers when judging whether a row has visible text."""
     return re.sub(r"<[^>]+>", "", text)
+
+
+def normalize_visible_name(name: str) -> str:
+    """
+    Normalize a visible name for cross-table comparisons.
+
+    We keep the spelling and punctuation intact, but collapse repeated
+    whitespace and case-fold the result so table comparisons are stable even
+    when one export has extra padding spaces.
+    """
+
+    return re.sub(r"\s+", " ", name).strip().casefold()
+
+
+NON_NPC_DIALOGUE_LABELS = {
+    normalize_visible_name("Victory Conditions"),
+    normalize_visible_name("Clear Bonus"),
+}
+
+
+def _looks_like_non_npc_dialogue_label(speaker_name: str, body_text: str) -> bool:
+    """
+    Return True for dialogue-looking rows that should not become NPC names.
+
+    The NPC pass is intentionally last in precedence. These rows are the
+    obvious non-NPC leftovers we still need to keep out of the NPC map even
+    though they appear in colon-prefixed dialogue-like surfaces.
+    """
+
+    if normalize_visible_name(speaker_name) in NON_NPC_DIALOGUE_LABELS:
+        return True
+    if body_text.startswith(("Restores ", "Greatly restores ", "Fully restores ")):
+        return True
+    if "Use during battle" in body_text or "Range:" in body_text:
+        return True
+    if body_text.startswith(("Cures ", "Creates ", "Blocks ", "Reduces ")):
+        return True
+    return False
 
 
 VOWELS = set("aeiouAEIOU")
@@ -109,6 +146,48 @@ def _looks_like_ascii_surface(text: str) -> bool:
     if not any(_looks_like_human_word(token) for token in tokens):
         return False
     return True
+
+
+def _expand_ascii_run(data: bytes, hit: int, needle_length: int) -> tuple[int, int]:
+    """
+    Expand an exact ASCII hit to the surrounding printable run.
+
+    This is used for short roster/menu labels such as `Mae`, where the whole
+    run is too short to survive the broader surface corpus filters.
+    """
+
+    start = hit
+    while start > 0 and printable_ascii(data[start - 1]):
+        start -= 1
+
+    end = hit + needle_length
+    limit = len(data)
+    while end < limit and printable_ascii(data[end]):
+        end += 1
+
+    return start, end
+
+
+def iter_exact_name_ascii_runs(data: bytes, current_name: str):
+    """
+    Yield exact ASCII runs that contain a specific character name.
+
+    This targets short roster or menu labels that can be missed by the broader
+    surface-corpus filters, while still avoiding subword matches inside longer
+    words like `Maximum`.
+    """
+
+    try:
+        needle = current_name.encode("ascii")
+    except UnicodeEncodeError:
+        return
+
+    pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
+    for hit in iter_find_all(data, needle):
+        run_start, run_end = _expand_ascii_run(data, hit, len(needle))
+        text = data[run_start:run_end].decode("ascii", errors="replace")
+        if pattern.search(text):
+            yield run_start, text
 
 
 def decode_known_text(data: bytes, offset: int, codec: str) -> tuple[str, int]:
@@ -191,6 +270,40 @@ def export_character_name_map(data: bytes) -> list[CharacterNameRow]:
     return exported
 
 
+def export_class_name_map(data: bytes) -> list[TextMapRow]:
+    """Export the confirmed class-name table."""
+
+    return [row for row in export_known_text_map(data) if row.table_slug == ROTDD_CLASS_NAME_TABLE_SLUG]
+
+
+def export_enemy_name_map(data: bytes) -> list[TextMapRow]:
+    """Export the confirmed enemy-name table."""
+
+    return [row for row in export_known_text_map(data) if row.table_slug == ROTDD_ENEMY_NAME_TABLE_SLUG]
+
+
+def export_item_name_map(data: bytes) -> list[TextMapRow]:
+    """Export the confirmed item-name table."""
+
+    return [row for row in export_known_text_map(data) if row.table_slug == ROTDD_ITEM_NAME_TABLE_SLUG]
+
+
+def collect_named_entity_name_sets(data: bytes) -> dict[str, set[str]]:
+    """
+    Collect the currently confirmed name sets that should take precedence over NPC extraction.
+
+    The result is intentionally ROM-driven and conservative: it only includes
+    the named entities we can already export as canonical or table-backed rows.
+    """
+
+    return {
+        "character": {normalize_visible_name(row.decoded_name) for row in export_character_name_map(data)},
+        "class": {normalize_visible_name(row.decoded_text) for row in export_class_name_map(data)},
+        "enemy": {normalize_visible_name(row.decoded_text) for row in export_enemy_name_map(data)},
+        "item": {normalize_visible_name(row.decoded_text) for row in export_item_name_map(data)},
+    }
+
+
 def write_text_map_csv(rows: list[TextMapRow], output_path: Path) -> None:
     """Write the structured text map to disk."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,10 +319,9 @@ def write_text_map_csv(rows: list[TextMapRow], output_path: Path) -> None:
         "text_length",
         "codec",
         "decoded_text",
-        "notes",
     ]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
             writer.writerow(
@@ -225,9 +337,8 @@ def write_text_map_csv(rows: list[TextMapRow], output_path: Path) -> None:
                     "text_length": row.text_length,
                     "codec": row.codec,
                     "decoded_text": row.decoded_text,
-                    "notes": row.notes,
                 }
-                )
+            )
 
 
 def write_character_name_csv(rows: list[CharacterNameRow], output_path: Path) -> None:
@@ -242,16 +353,62 @@ def write_character_name_csv(rows: list[CharacterNameRow], output_path: Path) ->
         "decoded_name",
     ]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
-        handle.write(",".join(fieldnames) + "\n")
+        writer = csv.writer(handle)
+        writer.writerow(fieldnames)
         for row in rows:
-            handle.write(
-                f"{row.local_index},"
-                f"0x{row.pointer_table_offset:08X},"
-                f"0x{row.pointer_value:08X},"
-                f"0x{row.name_rom_offset:08X},"
-                f"{row.name_length},"
-                f"{csv_quote_text(row.decoded_name)}\n"
+            writer.writerow(
+                [
+                    row.local_index,
+                    f"0x{row.pointer_table_offset:08X}",
+                    f"0x{row.pointer_value:08X}",
+                    f"0x{row.name_rom_offset:08X}",
+                    row.name_length,
+                    row.decoded_name,
+                ]
             )
+
+
+def write_name_table_csv(rows: list[TextMapRow], output_path: Path) -> None:
+    """Write a name-table export using the compact canonical-name column layout."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "local_index",
+        "pointer_table_offset",
+        "pointer_value",
+        "name_rom_offset",
+        "name_length",
+        "decoded_name",
+    ]
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(fieldnames)
+        for row in rows:
+            writer.writerow(
+                [
+                    row.local_index,
+                    f"0x{row.pointer_table_offset:08X}",
+                    f"0x{row.pointer_value:08X}",
+                    f"0x{row.text_rom_offset:08X}",
+                    row.text_length,
+                    row.decoded_text,
+                ]
+            )
+
+
+def write_class_name_csv(rows: list[TextMapRow], output_path: Path) -> None:
+    """Write the confirmed class-name table to disk."""
+    write_name_table_csv(rows, output_path)
+
+
+def write_enemy_name_csv(rows: list[TextMapRow], output_path: Path) -> None:
+    """Write the confirmed enemy-name table to disk."""
+    write_name_table_csv(rows, output_path)
+
+
+def write_item_name_csv(rows: list[TextMapRow], output_path: Path) -> None:
+    """Write the confirmed item-name table to disk."""
+    write_name_table_csv(rows, output_path)
 
 
 def export_text_surface_map(
@@ -377,142 +534,104 @@ def write_text_surface_csv(rows: list[TextSurfaceRow], output_path: Path) -> Non
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["row_index", "source_kind", "rom_offset", "decoded_text"]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
-        handle.write(",".join(fieldnames) + "\n")
+        writer = csv.writer(handle)
+        writer.writerow(fieldnames)
         for row in rows:
-            handle.write(
-                f"{row.row_index},"
-                f"{csv_quote_text(row.source_kind)},"
-                f"0x{row.rom_offset:08X},"
-                f"{csv_quote_text(row.decoded_text)}\n"
+            writer.writerow(
+                [
+                    row.row_index,
+                    row.source_kind,
+                    f"0x{row.rom_offset:08X}",
+                    row.decoded_text,
+                ]
             )
 
 
-def export_character_name_references(
-    data: bytes,
-    current_name: str,
-) -> list[CharacterNameReferenceRow]:
+def write_npc_name_csv(rows: list[NpcNameRow], output_path: Path) -> None:
+    """Write the dialogue-speaker name map to disk."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "row_index",
+        "first_source_index",
+        "first_rom_offset",
+        "occurrence_count",
+        "npc_name",
+    ]
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(fieldnames)
+        for row in rows:
+            writer.writerow(
+                [
+                    row.row_index,
+                    row.first_source_index,
+                    f"0x{row.first_rom_offset:08X}",
+                    row.occurrence_count,
+                    row.speaker_name,
+                ]
+            )
+
+
+def export_npc_name_map(data: bytes) -> list[NpcNameRow]:
     """
-    Export every current-name reference we can confidently see in the ROM.
+    Export visible dialogue-speaker prefixes as a browseable NPC-name map.
 
-    The resulting CSV is intended as a review artifact before a global rename.
-    It includes the canonical name table, known pointer-table text, and the
-    broader text-surface corpus.
+    This is intentionally conservative. It only includes dialogue-like ROTDD
+    rows that start with a plain speaker label followed by a colon, and it
+    skips names that already belong to the playable roster, classes, enemies,
+    or items.
     """
 
-    exported: list[CharacterNameReferenceRow] = []
-    row_index = 0
-    seen_offsets: set[int] = set()
-    pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
+    taken_names = collect_named_entity_name_sets(data)
+    taken_name_set = set().union(*taken_names.values())
+    speaker_pattern = re.compile(r"^(?P<speaker>[A-Za-z][A-Za-z .'\-]{0,31}):(?:\s|$)")
+    totals: dict[str, dict[str, object]] = {}
 
-    canonical_rows = export_character_name_map(data)
-    for row in canonical_rows:
-        if row.decoded_name != current_name:
+    for row in export_text_surface_corpus(data):
+        if row.source_kind != "rotdd":
             continue
-        if row.name_rom_offset in seen_offsets:
+        match = speaker_pattern.match(row.decoded_text)
+        if not match:
             continue
+
+        speaker_name = match.group("speaker").strip()
+        if not speaker_name:
+            continue
+        normalized_name = normalize_visible_name(speaker_name)
+        if normalized_name in taken_name_set:
+            continue
+        if len(speaker_name.split()) > 3:
+            continue
+
+        body_text = row.decoded_text[match.end():].strip()
+        if _looks_like_non_npc_dialogue_label(speaker_name, body_text):
+            continue
+
+        entry = totals.get(normalized_name)
+        if entry is None:
+            totals[normalized_name] = {
+                "speaker_name": speaker_name,
+                "count": 1,
+                "first_source_index": row.row_index,
+                "first_rom_offset": row.rom_offset,
+                "example_text": row.decoded_text,
+            }
+            continue
+
+        entry["count"] = int(entry["count"]) + 1
+
+    exported: list[NpcNameRow] = []
+    for row_index, entry in enumerate(totals.values()):
         exported.append(
-            CharacterNameReferenceRow(
+            NpcNameRow(
                 row_index=row_index,
-                source_kind="canonical_name",
-                source_label="character-name-table",
-                source_index=row.local_index,
-                rom_offset=row.name_rom_offset,
-                decoded_text=row.decoded_name,
+                speaker_name=str(entry["speaker_name"]),
+                occurrence_count=int(entry["count"]),
+                first_source_index=int(entry["first_source_index"]),
+                first_rom_offset=int(entry["first_rom_offset"]),
+                example_text=str(entry["example_text"]),
             )
         )
-        seen_offsets.add(row.name_rom_offset)
-        row_index += 1
-
-    known_rows = export_known_text_map(data)
-    for row in known_rows:
-        if not pattern.search(row.decoded_text):
-            continue
-        if row.text_rom_offset in seen_offsets:
-            continue
-        exported.append(
-            CharacterNameReferenceRow(
-                row_index=row_index,
-                source_kind="known_text",
-                source_label=row.table_slug,
-                source_index=row.local_index,
-                rom_offset=row.text_rom_offset,
-                decoded_text=row.decoded_text,
-            )
-        )
-        seen_offsets.add(row.text_rom_offset)
-        row_index += 1
-
-    surface_rows = export_text_surface_corpus(data)
-    for row in surface_rows:
-        if not pattern.search(row.decoded_text):
-            continue
-        if row.rom_offset in seen_offsets:
-            continue
-        exported.append(
-            CharacterNameReferenceRow(
-                row_index=row_index,
-                source_kind="text_surface",
-                source_label=row.source_kind,
-                source_index=row.row_index,
-                rom_offset=row.rom_offset,
-                decoded_text=row.decoded_text,
-            )
-        )
-        seen_offsets.add(row.rom_offset)
-        row_index += 1
-
-    for run_start, _run_bytes, decoded_text in iter_rotdd_surface_runs(data):
-        if run_start in seen_offsets:
-            continue
-        terminated_raw = read_terminated_string(data, run_start, terminator=ROTDD_TERMINATOR)
-        terminated_text = decode_rotdd_bytes(terminated_raw)
-        if not pattern.search(terminated_text):
-            continue
-
-        exported.append(
-            CharacterNameReferenceRow(
-                row_index=row_index,
-                source_kind="rotdd_surface_run",
-                source_label="surface-run",
-                source_index=run_start,
-                rom_offset=run_start,
-                decoded_text=terminated_text,
-            )
-        )
-        seen_offsets.add(run_start)
-        row_index += 1
-
-    ascii_index = 0
-    limit = len(data)
-    while ascii_index < limit:
-        if not printable_ascii(data[ascii_index]):
-            ascii_index += 1
-            continue
-
-        run_start = ascii_index
-        run: list[int] = []
-        while ascii_index < limit and printable_ascii(data[ascii_index]):
-            run.append(data[ascii_index])
-            ascii_index += 1
-
-        text = bytes(run).decode("ascii", errors="replace")
-        if not pattern.search(text):
-            continue
-        if run_start in seen_offsets:
-            continue
-
-        exported.append(
-            CharacterNameReferenceRow(
-                row_index=row_index,
-                source_kind="ascii_surface",
-                source_label="printable_ascii",
-                source_index=run_start,
-                rom_offset=run_start,
-                decoded_text=text,
-            )
-        )
-        seen_offsets.add(run_start)
-        row_index += 1
 
     return exported
 
@@ -543,30 +662,3 @@ def iter_rotdd_surface_runs(data: bytes):
 
         if run:
             yield run_start, bytes(run), decode_rotdd_bytes(bytes(run))
-
-
-def write_character_name_references_csv(
-    rows: list[CharacterNameReferenceRow],
-    output_path: Path,
-) -> None:
-    """Write the current-name reference map to disk."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "row_index",
-        "source_kind",
-        "source_label",
-        "source_index",
-        "rom_offset",
-        "decoded_text",
-    ]
-    with output_path.open("w", newline="", encoding="utf-8") as handle:
-        handle.write(",".join(fieldnames) + "\n")
-        for row in rows:
-            handle.write(
-                f"{row.row_index},"
-                f"{csv_quote_text(row.source_kind)},"
-                f"{csv_quote_text(row.source_label)},"
-                f"{row.source_index},"
-                f"0x{row.rom_offset:08X},"
-                f"{csv_quote_text(row.decoded_text)}\n"
-            )

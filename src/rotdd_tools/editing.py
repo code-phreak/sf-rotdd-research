@@ -12,17 +12,31 @@ import re
 from pathlib import Path
 
 from .catalog import (
+    collect_named_entity_name_sets,
     export_character_name_map,
+    export_item_name_map,
+    iter_exact_name_ascii_runs,
+    export_class_name_map,
+    export_enemy_name_map,
+    export_npc_name_map,
     export_known_text_map,
     export_text_surface_corpus,
+    normalize_visible_name,
     iter_rotdd_surface_runs,
 )
-from .models import CharacterNameReferenceRow, CharacterNameRow, TextMapRow
+from .models import CharacterNameReferenceRow, CharacterNameRow, NpcNameRow, TextMapRow
 from .gba import GBA_ROM_BASE, iter_find_all, printable_ascii, read_terminated_string
 from .rotdd import (
     KNOWN_TEXT_TABLES,
     ROTDD_CHARACTER_NAME_REPOINT_END,
     ROTDD_CHARACTER_NAME_REPOINT_START,
+    ROTDD_CHARACTER_NAME_MAX_LENGTH,
+    ROTDD_CLASS_NAME_MAX_LENGTH,
+    ROTDD_CLASS_NAME_TABLE_SLUG,
+    ROTDD_ENEMY_NAME_MAX_LENGTH,
+    ROTDD_ENEMY_NAME_TABLE_SLUG,
+    ROTDD_ITEM_NAME_MAX_LENGTH,
+    ROTDD_ITEM_NAME_TABLE_SLUG,
     ROTDD_DIALOGUE_LINE_WIDTH,
     ROTDD_DIALOGUE_VISIBLE_ROWS,
     ROTDD_SPACE,
@@ -532,6 +546,56 @@ def select_character_name_row(
     return matches[0]
 
 
+def select_npc_name_row(rows: list[NpcNameRow], name: str) -> NpcNameRow:
+    """Select one NPC/speaker name row by its decoded speaker label."""
+
+    matches = [row for row in rows if row.speaker_name == name]
+    if not matches:
+        raise ValueError(f"No NPC-name row found with decoded name {name!r}.")
+    if len(matches) > 1:
+        available = ", ".join(str(row.row_index) for row in matches)
+        raise ValueError(
+            f"NPC name {name!r} appears {len(matches)} times. "
+            f"Matching row indices: {available}."
+        )
+    return matches[0]
+
+
+def _collect_taken_entity_names(data: bytes) -> dict[str, set[str]]:
+    """Collect the current ROM-visible names that should not be duplicated."""
+
+    taken = collect_named_entity_name_sets(data)
+    taken["npc"] = {normalize_visible_name(row.speaker_name) for row in export_npc_name_map(data)}
+    return taken
+
+
+def _ensure_replacement_name_is_unique(
+    data: bytes,
+    current_name: str,
+    replacement_name: str,
+    entity_label: str,
+) -> None:
+    """Reject renames that would create a duplicate name anywhere we track names."""
+
+    normalized_current = normalize_visible_name(current_name)
+    normalized_replacement = normalize_visible_name(replacement_name)
+
+    if normalized_replacement == normalized_current:
+        return
+
+    conflict_sources = [
+        label
+        for label, names in _collect_taken_entity_names(data).items()
+        if normalized_replacement in names
+    ]
+    if conflict_sources:
+        sources = ", ".join(conflict_sources)
+        raise ValueError(
+            f"Replacement name {replacement_name!r} is already in use by {sources}. "
+            f"Choose a unique replacement name before renaming the {entity_label}."
+        )
+
+
 def _find_zero_run(data: bytes, start: int, end: int, length: int) -> int:
     """Find a zero-filled region that can hold a repointed name."""
 
@@ -694,14 +758,7 @@ def patch_character_name_everywhere(
 
     name_rows = export_character_name_map(data)
     canonical_row = select_character_name_row(name_rows, current_name)
-
-    duplicate_matches = [row for row in name_rows if row.decoded_name == replacement_name and row.decoded_name != current_name]
-    if duplicate_matches:
-        available = ", ".join(f"{row.local_index}" for row in duplicate_matches)
-        raise ValueError(
-            f"Replacement name {replacement_name!r} is already in use by canonical row(s): {available}. "
-            "Choose a unique replacement name before renaming."
-        )
+    _ensure_replacement_name_is_unique(data, current_name, replacement_name, "character")
 
     try:
         replacement_bytes = replacement_name.encode("ascii")
@@ -710,6 +767,10 @@ def patch_character_name_everywhere(
 
     if not replacement_bytes:
         raise ValueError("Character names cannot be empty.")
+    if len(replacement_bytes) > ROTDD_CHARACTER_NAME_MAX_LENGTH:
+        raise ValueError(
+            f"Character names are currently limited to {ROTDD_CHARACTER_NAME_MAX_LENGTH} ASCII characters."
+        )
 
     mutable = bytearray(data)
     pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
@@ -843,6 +904,9 @@ def patch_character_name_everywhere(
                 continue
         else:
             try:
+                # ASCII surface rows can also repoint when they outgrow the
+                # original slot, so they must participate in the same reserved
+                # free-space pool as the ROTDD surface paths above.
                 changed, target_rom_offset, payload_length = _patch_ascii_run(
                     mutable=mutable,
                     data=data,
@@ -850,6 +914,7 @@ def patch_character_name_everywhere(
                     original_length=original_length,
                     current_name=current_name,
                     replacement_name=replacement_name,
+                    reserved_ranges=reserved_ranges,
                 )
             except ValueError:
                 skipped_rows.append(
@@ -884,6 +949,52 @@ def patch_character_name_everywhere(
                 f"Auto-wrapped replacement text for surface row {row.row_index} "
                 f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
             )
+
+    for run_start, text in iter_exact_name_ascii_runs(data, current_name):
+        if run_start in patched_offsets:
+            continue
+        if any(start <= run_start < end for start, end in patched_ranges):
+            continue
+
+        try:
+            changed, target_rom_offset, payload_length = _patch_ascii_run(
+                mutable=mutable,
+                data=data,
+                rom_offset=run_start,
+                original_length=len(text),
+                current_name=current_name,
+                replacement_name=replacement_name,
+                reserved_ranges=reserved_ranges,
+            )
+        except ValueError:
+            skipped_rows.append(
+                CharacterNameReferenceRow(
+                    row_index=len(skipped_rows),
+                    source_kind="ascii_exact_name",
+                    source_label="exact_name_hit",
+                    source_index=run_start,
+                    rom_offset=run_start,
+                    decoded_text=text,
+                )
+            )
+            continue
+
+        if not changed:
+            continue
+
+        patched_offsets.add(run_start)
+        patched_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        reserved_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        patched_rows.append(
+            CharacterNameReferenceRow(
+                row_index=len(patched_rows),
+                source_kind="ascii_exact_name",
+                source_label="exact_name_hit",
+                source_index=run_start,
+                rom_offset=target_rom_offset,
+                decoded_text=text,
+            )
+        )
 
     for run_start, run_bytes, decoded_text in iter_rotdd_surface_runs(data):
         if run_start in patched_offsets:
@@ -1009,6 +1120,615 @@ def patch_character_name_everywhere(
     return canonical_row, patched_rows, skipped_rows, final_output_path
 
 
+def _patch_named_table_everywhere(
+    data: bytes,
+    source_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output_path: Path | None,
+    overwrite: bool,
+    in_place: bool,
+    table_rows: list[TextMapRow],
+    table_slug: str,
+    table_label: str,
+    table_row_source_kind: str,
+    max_length: int,
+) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
+    """
+    Patch one visible-name table across the confirmed table slice and all
+    matched visible references.
+
+    The implementation mirrors the playable-character rename workflow, but it
+    starts from the dedicated name-table slice instead of the character-name
+    pointer table.
+    """
+
+    source_rows = [row for row in table_rows if row.decoded_text == current_name]
+    if not source_rows:
+        raise ValueError(f"No {table_label}-name row found with decoded text {current_name!r}.")
+    _ensure_replacement_name_is_unique(data, current_name, replacement_name, table_label)
+
+    try:
+        replacement_bytes = replacement_name.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"{table_label.capitalize()} names must be plain ASCII for now.") from exc
+
+    if not replacement_bytes:
+        raise ValueError(f"{table_label.capitalize()} names cannot be empty.")
+    if len(replacement_bytes) > max_length:
+        raise ValueError(
+            f"{table_label.capitalize()} names are currently limited to {max_length} ASCII characters."
+        )
+
+    mutable = bytearray(data)
+    pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
+    reserved_ranges: list[tuple[int, int]] = []
+    patched_rows: list[CharacterNameReferenceRow] = []
+    skipped_rows: list[CharacterNameReferenceRow] = []
+    patched_offsets: set[int] = set()
+    patched_ranges: list[tuple[int, int]] = []
+
+    for row in source_rows:
+        try:
+            changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
+                mutable=mutable,
+                data=data,
+                rom_offset=row.text_rom_offset,
+                original_length=row.text_length,
+                current_name=current_name,
+                replacement_name=replacement_name,
+                reserved_ranges=reserved_ranges,
+            )
+        except ValueError:
+            skipped_rows.append(
+                CharacterNameReferenceRow(
+                    row_index=len(skipped_rows),
+                    source_kind=table_row_source_kind,
+                    source_label=row.table_slug,
+                    source_index=row.local_index,
+                    rom_offset=row.text_rom_offset,
+                    decoded_text=row.decoded_text,
+                )
+            )
+            continue
+        if not changed:
+            continue
+
+        patched_offsets.add(row.text_rom_offset)
+        patched_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        reserved_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        patched_rows.append(
+            CharacterNameReferenceRow(
+                row_index=len(patched_rows),
+                source_kind=table_row_source_kind,
+                source_label=row.table_slug,
+                source_index=row.local_index,
+                rom_offset=target_rom_offset,
+                decoded_text=row.decoded_text,
+            )
+        )
+        if auto_wrapped:
+            print(
+                f"Auto-wrapped replacement text for {row.table_slug}[{row.local_index}] "
+                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
+            )
+
+    known_rows = export_known_text_map(data)
+    for row in known_rows:
+        if row.table_slug == table_slug:
+            continue
+        if not pattern.search(row.decoded_text):
+            continue
+        if row.text_rom_offset in patched_offsets:
+            continue
+        if any(start <= row.text_rom_offset < end for start, end in patched_ranges):
+            continue
+        if row.codec != "rotdd":
+            raise ValueError(f"Unsupported patch codec for table '{row.table_slug}': {row.codec}")
+
+        try:
+            changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
+                mutable=mutable,
+                data=data,
+                rom_offset=row.text_rom_offset,
+                original_length=row.text_length,
+                current_name=current_name,
+                replacement_name=replacement_name,
+                reserved_ranges=reserved_ranges,
+            )
+        except ValueError:
+            skipped_rows.append(
+                CharacterNameReferenceRow(
+                    row_index=len(skipped_rows),
+                    source_kind="known_text",
+                    source_label=row.table_slug,
+                    source_index=row.local_index,
+                    rom_offset=row.text_rom_offset,
+                    decoded_text=row.decoded_text,
+                )
+            )
+            continue
+        if not changed:
+            continue
+
+        patched_offsets.add(row.text_rom_offset)
+        patched_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        reserved_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        patched_rows.append(
+            CharacterNameReferenceRow(
+                row_index=len(patched_rows),
+                source_kind="known_text",
+                source_label=row.table_slug,
+                source_index=row.local_index,
+                rom_offset=target_rom_offset,
+                decoded_text=row.decoded_text,
+            )
+        )
+        if auto_wrapped:
+            print(
+                f"Auto-wrapped replacement text for {row.table_slug}[{row.local_index}] "
+                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
+            )
+
+    surface_rows = export_text_surface_corpus(data)
+    for row in surface_rows:
+        if not pattern.search(row.decoded_text):
+            continue
+        if row.rom_offset in patched_offsets:
+            continue
+        if any(start <= row.rom_offset < end for start, end in patched_ranges):
+            continue
+
+        original_length = len(read_terminated_string(data, row.rom_offset, terminator=ROTDD_TERMINATOR))
+        if row.source_kind == "rotdd":
+            try:
+                changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=row.rom_offset,
+                    original_length=original_length,
+                    current_name=current_name,
+                    replacement_name=replacement_name,
+                )
+            except ValueError:
+                skipped_rows.append(
+                    CharacterNameReferenceRow(
+                        row_index=len(skipped_rows),
+                        source_kind=f"text_surface:{row.source_kind}",
+                        source_label="surface-corpus",
+                        source_index=row.row_index,
+                        rom_offset=row.rom_offset,
+                        decoded_text=row.decoded_text,
+                    )
+                )
+                continue
+        else:
+            try:
+                changed, target_rom_offset, payload_length = _patch_ascii_run(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=row.rom_offset,
+                    original_length=original_length,
+                    current_name=current_name,
+                    replacement_name=replacement_name,
+                    reserved_ranges=reserved_ranges,
+                )
+            except ValueError:
+                skipped_rows.append(
+                    CharacterNameReferenceRow(
+                        row_index=len(skipped_rows),
+                        source_kind=f"text_surface:{row.source_kind}",
+                        source_label="surface-corpus",
+                        source_index=row.row_index,
+                        rom_offset=row.rom_offset,
+                        decoded_text=row.decoded_text,
+                    )
+                )
+                continue
+
+        if not changed:
+            continue
+
+        patched_offsets.add(row.rom_offset)
+        patched_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        patched_rows.append(
+            CharacterNameReferenceRow(
+                row_index=len(patched_rows),
+                source_kind=f"text_surface:{row.source_kind}",
+                source_label="surface-corpus",
+                source_index=row.row_index,
+                rom_offset=target_rom_offset,
+                decoded_text=row.decoded_text,
+            )
+        )
+        if row.source_kind == "rotdd" and auto_wrapped:
+            print(
+                f"Auto-wrapped replacement text for surface row {row.row_index} "
+                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
+            )
+
+    for run_start, text in iter_exact_name_ascii_runs(data, current_name):
+        if run_start in patched_offsets:
+            continue
+        if any(start <= run_start < end for start, end in patched_ranges):
+            continue
+
+        try:
+            changed, target_rom_offset, payload_length = _patch_ascii_run(
+                mutable=mutable,
+                data=data,
+                rom_offset=run_start,
+                original_length=len(text),
+                current_name=current_name,
+                replacement_name=replacement_name,
+                reserved_ranges=reserved_ranges,
+            )
+        except ValueError:
+            skipped_rows.append(
+                CharacterNameReferenceRow(
+                    row_index=len(skipped_rows),
+                    source_kind="ascii_exact_name",
+                    source_label="exact_name_hit",
+                    source_index=run_start,
+                    rom_offset=run_start,
+                    decoded_text=text,
+                )
+            )
+            continue
+
+        if not changed:
+            continue
+
+        patched_offsets.add(run_start)
+        patched_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        reserved_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        patched_rows.append(
+            CharacterNameReferenceRow(
+                row_index=len(patched_rows),
+                source_kind="ascii_exact_name",
+                source_label="exact_name_hit",
+                source_index=run_start,
+                rom_offset=target_rom_offset,
+                decoded_text=text,
+            )
+        )
+
+    final_output_path = resolve_patch_output_path(
+        source_path=source_path,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+    final_output_path.parent.mkdir(parents=True, exist_ok=True)
+    final_output_path.write_bytes(mutable)
+    return source_rows[0], patched_rows, skipped_rows, final_output_path
+
+
+def patch_class_name_everywhere(
+    data: bytes,
+    source_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output_path: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
+    """Patch a class name across the confirmed class slice and matched references."""
+
+    class_rows = export_class_name_map(data)
+    return _patch_named_table_everywhere(
+        data=data,
+        source_path=source_path,
+        current_name=current_name,
+        replacement_name=replacement_name,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+        table_rows=class_rows,
+        table_slug=ROTDD_CLASS_NAME_TABLE_SLUG,
+        table_label="class",
+        table_row_source_kind="class_name_table",
+        max_length=ROTDD_CLASS_NAME_MAX_LENGTH,
+    )
+
+
+def patch_enemy_name_everywhere(
+    data: bytes,
+    source_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output_path: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
+    """Patch an enemy name across the confirmed enemy slice and matched references."""
+
+    enemy_rows = export_enemy_name_map(data)
+    return _patch_named_table_everywhere(
+        data=data,
+        source_path=source_path,
+        current_name=current_name,
+        replacement_name=replacement_name,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+        table_rows=enemy_rows,
+        table_slug=ROTDD_ENEMY_NAME_TABLE_SLUG,
+        table_label="enemy",
+        table_row_source_kind="enemy_name_table",
+        max_length=ROTDD_ENEMY_NAME_MAX_LENGTH,
+    )
+
+
+def patch_item_name_everywhere(
+    data: bytes,
+    source_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output_path: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
+    """Patch an item name across the confirmed item slice and matched references."""
+
+    item_rows = export_item_name_map(data)
+    return _patch_named_table_everywhere(
+        data=data,
+        source_path=source_path,
+        current_name=current_name,
+        replacement_name=replacement_name,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+        table_rows=item_rows,
+        table_slug=ROTDD_ITEM_NAME_TABLE_SLUG,
+        table_label="item",
+        table_row_source_kind="item_name_table",
+        max_length=ROTDD_ITEM_NAME_MAX_LENGTH,
+    )
+
+
+def patch_npc_name_everywhere(
+    data: bytes,
+    source_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output_path: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> tuple[NpcNameRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
+    """
+    Patch a dialogue speaker or NPC-style visible name across dialogue text.
+
+    NPC names are not source-table driven like the playable roster, so this
+    workflow focuses on the dialogue surfaces and other visible whole-name hits
+    that the corpus exporter can see.
+    """
+
+    npc_rows = export_npc_name_map(data)
+    npc_row = select_npc_name_row(npc_rows, current_name)
+    _ensure_replacement_name_is_unique(data, current_name, replacement_name, "NPC")
+
+    try:
+        replacement_bytes = replacement_name.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError("NPC names must be plain ASCII for now.") from exc
+
+    if not replacement_bytes:
+        raise ValueError("NPC names cannot be empty.")
+
+    mutable = bytearray(data)
+    pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
+    reserved_ranges: list[tuple[int, int]] = []
+    patched_rows: list[CharacterNameReferenceRow] = []
+    skipped_rows: list[CharacterNameReferenceRow] = []
+    patched_offsets: set[int] = set()
+    patched_ranges: list[tuple[int, int]] = []
+
+    surface_rows = export_text_surface_corpus(data)
+    for row in surface_rows:
+        if not pattern.search(row.decoded_text):
+            continue
+        if row.rom_offset in patched_offsets:
+            continue
+        if any(start <= row.rom_offset < end for start, end in patched_ranges):
+            continue
+
+        original_length = len(read_terminated_string(data, row.rom_offset, terminator=ROTDD_TERMINATOR))
+        if row.source_kind == "rotdd":
+            try:
+                changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=row.rom_offset,
+                    original_length=original_length,
+                    current_name=current_name,
+                    replacement_name=replacement_name,
+                    reserved_ranges=reserved_ranges,
+                )
+            except ValueError:
+                skipped_rows.append(
+                    CharacterNameReferenceRow(
+                        row_index=len(skipped_rows),
+                        source_kind=f"npc_surface:{row.source_kind}",
+                        source_label="surface-corpus",
+                        source_index=row.row_index,
+                        rom_offset=row.rom_offset,
+                        decoded_text=row.decoded_text,
+                    )
+                )
+                continue
+        else:
+            try:
+                changed, target_rom_offset, payload_length = _patch_ascii_run(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=row.rom_offset,
+                    original_length=original_length,
+                    current_name=current_name,
+                    replacement_name=replacement_name,
+                    reserved_ranges=reserved_ranges,
+                )
+            except ValueError:
+                skipped_rows.append(
+                    CharacterNameReferenceRow(
+                        row_index=len(skipped_rows),
+                        source_kind=f"npc_surface:{row.source_kind}",
+                        source_label="surface-corpus",
+                        source_index=row.row_index,
+                        rom_offset=row.rom_offset,
+                        decoded_text=row.decoded_text,
+                    )
+                )
+                continue
+
+        if not changed:
+            continue
+
+        patched_offsets.add(row.rom_offset)
+        patched_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        if row.source_kind == "rotdd":
+            reserved_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        patched_rows.append(
+            CharacterNameReferenceRow(
+                row_index=len(patched_rows),
+                source_kind=f"npc_surface:{row.source_kind}",
+                source_label="surface-corpus",
+                source_index=row.row_index,
+                rom_offset=target_rom_offset,
+                decoded_text=row.decoded_text,
+            )
+        )
+        if row.source_kind == "rotdd" and auto_wrapped:
+            print(
+                f"Auto-wrapped replacement text for NPC surface row {row.row_index} "
+                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
+            )
+
+    for run_start, run_bytes, decoded_text in iter_rotdd_surface_runs(data):
+        if run_start in patched_offsets:
+            continue
+        if any(start <= run_start < end for start, end in patched_ranges):
+            continue
+        if not pattern.search(decoded_text):
+            continue
+
+        original_length = len(read_terminated_string(data, run_start, terminator=ROTDD_TERMINATOR))
+        try:
+            changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
+                mutable=mutable,
+                data=data,
+                rom_offset=run_start,
+                original_length=original_length,
+                current_name=current_name,
+                replacement_name=replacement_name,
+                reserved_ranges=reserved_ranges,
+            )
+        except ValueError:
+            skipped_rows.append(
+                CharacterNameReferenceRow(
+                    row_index=len(skipped_rows),
+                    source_kind="npc_surface_run",
+                    source_label="surface-run",
+                    source_index=run_start,
+                    rom_offset=run_start,
+                    decoded_text=decoded_text,
+                )
+            )
+            continue
+
+        if not changed:
+            continue
+
+        patched_offsets.add(run_start)
+        patched_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        reserved_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        patched_rows.append(
+            CharacterNameReferenceRow(
+                row_index=len(patched_rows),
+                source_kind="npc_surface_run",
+                source_label="surface-run",
+                source_index=run_start,
+                rom_offset=target_rom_offset,
+                decoded_text=decoded_text,
+            )
+        )
+        if auto_wrapped:
+            print(
+                f"Auto-wrapped replacement text for NPC surface run at 0x{run_start:08X} "
+                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
+            )
+
+    ascii_index = 0
+    limit = len(data)
+    while ascii_index < limit:
+        if not printable_ascii(data[ascii_index]):
+            ascii_index += 1
+            continue
+
+        run_start = ascii_index
+        run: list[int] = []
+        while ascii_index < limit and printable_ascii(data[ascii_index]):
+            run.append(data[ascii_index])
+            ascii_index += 1
+
+        original_text = bytes(run).decode("ascii", errors="replace")
+        if not pattern.search(original_text):
+            continue
+        if any(start <= run_start < end for start, end in patched_ranges):
+            continue
+
+        try:
+            changed, target_rom_offset, payload_length = _patch_ascii_run(
+                mutable=mutable,
+                data=data,
+                rom_offset=run_start,
+                original_length=len(run),
+                current_name=current_name,
+                replacement_name=replacement_name,
+                reserved_ranges=reserved_ranges,
+            )
+        except ValueError:
+            skipped_rows.append(
+                CharacterNameReferenceRow(
+                    row_index=len(skipped_rows),
+                    source_kind="npc_ascii_surface",
+                    source_label="printable_ascii",
+                    source_index=run_start,
+                    rom_offset=run_start,
+                    decoded_text=original_text,
+                )
+            )
+            continue
+
+        if not changed:
+            continue
+
+        patched_offsets.add(run_start)
+        patched_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        reserved_ranges.append((target_rom_offset, target_rom_offset + payload_length))
+        patched_rows.append(
+            CharacterNameReferenceRow(
+                row_index=len(patched_rows),
+                source_kind="npc_ascii_surface",
+                source_label="printable_ascii",
+                source_index=run_start,
+                rom_offset=target_rom_offset,
+                decoded_text=original_text,
+            )
+        )
+
+    final_output_path = resolve_patch_output_path(
+        source_path=source_path,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+    final_output_path.parent.mkdir(parents=True, exist_ok=True)
+    final_output_path.write_bytes(mutable)
+    return npc_row, patched_rows, skipped_rows, final_output_path
+
+
 def patch_character_name(
     data: bytes,
     source_path: Path,
@@ -1028,14 +1748,7 @@ def patch_character_name(
 
     rows = export_character_name_map(data)
     row = select_character_name_row(rows, current_name)
-
-    duplicate_matches = [candidate for candidate in rows if candidate.decoded_name == replacement_name and candidate.decoded_name != current_name]
-    if duplicate_matches:
-        available = ", ".join(str(candidate.local_index) for candidate in duplicate_matches)
-        raise ValueError(
-            f"Replacement name {replacement_name!r} is already in use by canonical row(s): {available}. "
-            "Choose a unique replacement name before renaming."
-        )
+    _ensure_replacement_name_is_unique(data, current_name, replacement_name, "character")
 
     try:
         replacement_bytes = replacement_name.encode("ascii")
@@ -1044,6 +1757,10 @@ def patch_character_name(
 
     if not replacement_bytes:
         raise ValueError("Character names cannot be empty.")
+    if len(replacement_bytes) > ROTDD_CHARACTER_NAME_MAX_LENGTH:
+        raise ValueError(
+            f"Character names are currently limited to {ROTDD_CHARACTER_NAME_MAX_LENGTH} ASCII characters."
+        )
 
     mutable = bytearray(data)
     target_rom_offset = row.name_rom_offset

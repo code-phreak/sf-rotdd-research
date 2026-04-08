@@ -65,6 +65,18 @@ ROTDD_SURFACE_UNKNOWN_CONTROLS = {
 # table. The first 32 rows cover the named playable and story characters.
 ROTDD_CHARACTER_NAME_POINTER_TABLE_OFFSET = 0x0056F578
 ROTDD_CHARACTER_NAME_COUNT = 33
+ROTDD_CHARACTER_NAME_MAX_LENGTH = 12
+
+# The confirmed class-name and enemy-name sources are two contiguous slices of
+# the same partial ROTDD pointer table in the same general name bank area.
+# Keeping them as separate table definitions makes the public command layer
+# match the actual ROM evidence instead of forcing one label onto both groups.
+ROTDD_CLASS_NAME_TABLE_SLUG = "class_names_partial"
+ROTDD_CLASS_NAME_MAX_LENGTH = 12
+ROTDD_ENEMY_NAME_TABLE_SLUG = "enemy_names_partial"
+ROTDD_ENEMY_NAME_MAX_LENGTH = 12
+ROTDD_ITEM_NAME_TABLE_SLUG = "item_names"
+ROTDD_ITEM_NAME_MAX_LENGTH = 12
 
 # Current repointing uses the observed zero padding that sits immediately
 # before the character-name bank. Keep this conservative so we do not invent
@@ -103,12 +115,20 @@ KNOWN_TEXT_TABLES = [
         notes="Confirmed item display-name table.",
     ),
     KnownTextTable(
-        slug="class_enemy_type_names_partial",
-        category="class_or_enemy_type",
+        slug=ROTDD_CLASS_NAME_TABLE_SLUG,
+        category="class",
         start_offset=0x0056F000,
-        count=64,
+        count=39,
         codec="rotdd",
-        notes="Confirmed contiguous table after item names. Current export is partial and should not be treated as complete.",
+        notes="Confirmed contiguous class-name slice after item names. Current export is partial and should not be treated as complete.",
+    ),
+    KnownTextTable(
+        slug=ROTDD_ENEMY_NAME_TABLE_SLUG,
+        category="enemy",
+        start_offset=0x0056F09C,
+        count=79,
+        codec="rotdd",
+        notes="Confirmed contiguous enemy-name slice after the class names. The table continues through Soul Eater before the next text block begins, so the current export is the full confirmed enemy slice we have evidence for.",
     ),
 ]
 

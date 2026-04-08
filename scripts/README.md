@@ -34,15 +34,31 @@ If the file does not exist, is empty, is unreadable, or points to a ROM path tha
 - `scan-rotdd-runs` finds contiguous runs that use only the confirmed ROTDD text alphabet.
 - `find-pointer` searches for GBA little-endian ROM pointers to a target offset.
 - `dump-pointer-table` decodes a pointer table into strings.
-- `export-known-text-map` writes the current known ROTDD text tables to `research/raw/text-map.csv`.
 - `export-character-name-map` writes the canonical character-name pointer table to `research/raw/character-names.csv`.
-- `export-character-name-references` writes a review CSV of every matched reference for one character name to `research/raw/character-name-references.csv`.
+- `export-class-name-map` writes the confirmed class-name slice to `research/raw/class-names.csv`.
+- `export-enemy-name-map` writes the confirmed enemy-name slice to `research/raw/enemy-names.csv`.
+- `export-item-name-map` writes the confirmed item-name table to `research/raw/item-names.csv`.
+- `export-npc-name-map` writes dialogue-speaker prefixes to `research/raw/npc-names.csv`.
 - `export-text-surface-corpus` scans the whole ROM for dialogue-like ROTDD text runs and writes them to `research/raw/text-surfaces.csv`.
 - `export-text-surface-map` writes a contiguous text surface to `research/raw/text-surfaces.csv`.
 - `list-character-names` lists the canonical character names from the pointer table.
+- `list-class-names` lists the confirmed class names from the current slice.
+- `list-enemy-names` lists the confirmed enemy names from the current table.
+- `list-item-names` lists the confirmed item names from the current table.
+- `list-npc-names` lists dialogue-speaker prefixes extracted from the corpus.
 - `list-known-text` lists mapped rows from the known ROTDD text tables.
 - `patch-known-text` patches one mapped text entry in a copied ROM while keeping the encoded text within the original byte budget.
 - `patch-character-name` performs a case-sensitive global rename across the canonical name table, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs such as short menu labels.
+- current replacement names are conservatively capped at 12 ASCII characters, which is enough for the repointed-safe path we have evidence for right now.
+- `patch-class-name` performs the matching case-sensitive global rename across the confirmed class-name slice, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs.
+- `patch-enemy-name` performs the matching case-sensitive global rename across the confirmed enemy-name slice, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs.
+- `patch-item-name` performs the matching case-sensitive global rename across the confirmed item-name table, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs.
+- `patch-npc-name` performs the matching case-sensitive global rename across dialogue-speaker prefixes and matching text-surface rows. NPC names are limited by dialogue line wrapping rather than the 12-character cap used for characters, classes, enemies, and items.
+- `character <name> rename <replacement>` is the preferred API-style entry point for playable characters.
+- `class <name> rename <replacement>` is the preferred API-style entry point for class names.
+- `enemy <name> rename <replacement>` is the preferred API-style entry point for enemy names.
+- `item <name> rename <replacement>` is the preferred API-style entry point for item names.
+- `npc <name> rename <replacement>` is the preferred API-style entry point for dialogue-speaker names.
 - `patch-text-at-offset` patches one text run at a literal ROM offset while keeping the encoded text within the original byte budget.
 - `peek` prints a quick hex and ASCII view of a ROM region.
 
@@ -58,16 +74,31 @@ python scripts/rom_text_tools.py --rom path/to/your-rom.gba dump-rotdd --start 0
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba scan-rotdd-runs --start 0x1DD7E3 --end 0x1DE100
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba find-pointer 0x1E0784
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba dump-pointer-table 0x56ED80 --count 16 --codec rotdd
-python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-known-text-map
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-character-name-map
-python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-character-name-references Mae
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-class-name-map
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-enemy-name-map
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-item-name-map
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-npc-name-map
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-text-surface-corpus --min-len 24
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba export-text-surface-map --start 0x1765E3 --end 0x177B80
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-character-names --contains Mae
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-class-names --contains Knight
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-enemy-names --contains Goblin
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-item-names --contains Ring
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-npc-names --contains Priest
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-known-text --table item_names --contains Ring
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba list-known-text --category item --show-notes
-python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-known-text --table item_names --index 0 --output path/to/test-rom.gba "Magic   Herb"
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-known-text --table item_names --index 0 --output path/to/test-rom.gba "Medical Herb"
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-character-name Mae Jade --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-class-name Knight Baron --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-enemy-name Goblin Ogre --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-item-name Healing Seed Remedy --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-npc-name Priest Oracle --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba character Mae rename Jade --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba class Knight rename Baron --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba enemy Goblin rename Ogre --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba item Healing Seed rename Remedy --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba npc Priest rename Oracle --output path/to/test-rom.gba
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-text-at-offset 0x001766AA "Max: Hyaaah!" --output path/to/test-rom.gba
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba peek 0x1DD5B0 --length 0x80
 ```
@@ -82,7 +113,7 @@ python scripts/rom_text_tools.py --rom path/to/your-rom.gba peek 0x1DD5B0 --leng
 - `0x22` is decoded as a hyphen, which keeps compound words intact during export and patching
 
 Character-name work currently starts from the plain ASCII pointer table at `0x0056F578` and the ASCII name bank at `0x001E0688`.
-The global rename command also scans the known ROTDD text tables and the broader text-surface corpus for whole-name matches so visible references stay in sync.
+The global rename command also scans the known ROTDD text tables, the broader text-surface corpus, and targeted exact-name ASCII hits for short roster/menu labels so visible references stay in sync.
 
 That mapping is strong enough to decode the spell and item bank around `0x1DD7E3` and the related pointer table around `0x56ED80`.
 
@@ -130,8 +161,14 @@ Use `<QUOTE>` inside replacement text when you need a double quote.
 - it also rewrites matching dialogue, menu labels, and other whole-name references that contain the old name
 - if a matched reference still does not fit, the tool reports it and leaves it for later repointing instead of forcing a bad write
 - duplicate live names are rejected so renames do not create collisions
+- replacement names are currently limited to 12 ASCII characters for the character, class, enemy, and item workflows; NPC names are limited by the dialogue box line length instead
+- whole-name matching prevents substring rewrites, so `Max` does not become `Jeffimum`
 - repointed rows are allocated from safe free space above the ROM header, and each reserved span is tracked so one rename does not overwrite another
 - it still supports `--output` for a copied ROM and `--in-place` for an unsafe direct write
+
+`patch-class-name` follows the same shape and the same safety rules, but it starts from the confirmed class-name slice instead of the playable-character pointer table.
+
+`patch-enemy-name` follows the same shape and the same safety rules, but it starts from the confirmed enemy-name slice instead of the playable-character pointer table.
 
 The current confirmed surface encoder supports uppercase letters, lowercase letters, spaces, known punctuation, and the inline tags used in the corpus export. Keep that limit in mind when choosing replacement text.
 

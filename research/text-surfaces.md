@@ -8,9 +8,29 @@ It separates confirmed evidence from likely story or script text so future work 
 
 ### Plain ASCII name bank
 
-Enemy and character names exist in a plain ASCII bank around `0x001E0700`.
+Character names exist in a plain ASCII bank around `0x001E0700`.
 
 This surface is useful for simple searches, but it is not the same thing as the story dialogue system.
+
+### Class-name table
+
+Class names exist in the first slice of the partial ROTDD table around `0x0056F000`.
+
+This surface currently behaves like a table-driven name block rather than freeform dialogue, and it is now exposed through the class rename workflow.
+
+### Enemy-name table
+
+Enemy names exist in the second slice of the same partial ROTDD table around `0x0056F09C`.
+
+This surface currently behaves like a table-driven name block rather than freeform dialogue, and it is now exposed through the enemy rename workflow.
+
+The confirmed enemy slice currently runs through `Soul Eater`.
+
+### Item-name table
+
+Item names are also exposed through the structured text map and the dedicated item-name workflow.
+
+This is not a dialogue surface, but it is part of the same general family of visible labels that we want the tooling to edit cleanly.
 
 ### ROTDD custom-encoded menu bank
 
@@ -110,6 +130,9 @@ Current dialogue-token conventions in the export:
 - the current read on `0x02` and `0x05` is that they behave like pauses or delays, but that is still unconfirmed, so they remain untranslated in the corpus for now
 - `0x22` is a hyphen and now decodes as `-`
 - the wrapper treats short punctuation-plus-quote tails as a unit so quote runs stay attached to the word they belong to during automatic wrapping
+- the class-name table around `0x0056F000` is treated as a separate visible-name source, not as a monster roster list
+- the enemy-name table around `0x0056F09C` is treated as a separate visible-name source, not as a monster roster list
+- the dialogue corpus also doubles as the extraction source for visible NPC/speaker names, which we now browse separately from the playable roster; NPC extraction is precedence-based, so playable names, enemies, classes, and items are filtered out first and the CSV keeps only the first mention of each remaining NPC name
 
 The dialogue window shows a speaker prefix like `Varios:` when the scene calls for one. The current CSV captures the decoded ROM surface as it appears in bytes, so speaker names may appear in the decoded text when they are part of the underlying text run.
 

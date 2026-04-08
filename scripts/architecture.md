@@ -15,7 +15,7 @@ This repository now treats the Python tooling as the beginning of a maintainable
 - `src/rotdd_tools/catalog.py`
   Export logic that turns known pointer tables into structured research artifacts.
 - `src/rotdd_tools/editing.py`
-  Conservative patch helpers for same-length edits in known text tables.
+  Conservative patch helpers for same-length edits and controlled repointing in known text tables.
 - `src/rotdd_tools/models.py`
   Named data structures for table metadata and exported rows.
 

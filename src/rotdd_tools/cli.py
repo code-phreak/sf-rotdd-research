@@ -8,16 +8,20 @@ from pathlib import Path
 
 from .catalog import (
     export_character_name_map,
-    export_character_name_references,
-    export_known_text_map,
+    export_class_name_map,
+    export_enemy_name_map,
+    export_item_name_map,
+    export_npc_name_map,
     export_text_surface_corpus,
     export_text_surface_map,
+    write_class_name_csv,
+    write_enemy_name_csv,
+    write_item_name_csv,
     write_character_name_csv,
-    write_character_name_references_csv,
-    write_text_map_csv,
+    write_npc_name_csv,
     write_text_surface_csv,
 )
-from .editing import patch_character_name_everywhere, patch_known_text, patch_text_at_offset
+from .editing import patch_character_name_everywhere, patch_class_name_everywhere, patch_enemy_name_everywhere, patch_item_name_everywhere, patch_known_text, patch_npc_name_everywhere, patch_text_at_offset
 from .gba import GBA_ROM_BASE, format_ascii, iter_find_all, printable_ascii, read_terminated_string
 from .paths import REPO_ROOT, resolve_rom_path
 from .rotdd import (
@@ -188,14 +192,6 @@ def peek(data: bytes, start: int, length: int) -> None:
         print(f"{row_start:#010x}  {hex_bytes:<47}  {format_ascii(row)}")
 
 
-def run_export_known_text_map(data: bytes, output: Path) -> None:
-    """Export the current known text tables to a structured CSV artifact."""
-    rows = export_known_text_map(data)
-    output_path = output if output.is_absolute() else (REPO_ROOT / output)
-    write_text_map_csv(rows, output_path)
-    print(f"Wrote {len(rows)} rows to {output_path}")
-
-
 def run_export_character_name_map(data: bytes, output: Path) -> None:
     """Export the canonical character-name pointer table to CSV."""
     rows = export_character_name_map(data)
@@ -204,11 +200,35 @@ def run_export_character_name_map(data: bytes, output: Path) -> None:
     print(f"Wrote {len(rows)} rows to {output_path}")
 
 
-def run_export_character_name_references(data: bytes, current_name: str, output: Path) -> None:
-    """Export every current-name reference we can see in the ROM."""
-    rows = export_character_name_references(data, current_name)
+def run_export_enemy_name_map(data: bytes, output: Path) -> None:
+    """Export the confirmed enemy-type name table to CSV."""
+    rows = export_enemy_name_map(data)
     output_path = output if output.is_absolute() else (REPO_ROOT / output)
-    write_character_name_references_csv(rows, output_path)
+    write_enemy_name_csv(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def run_export_class_name_map(data: bytes, output: Path) -> None:
+    """Export the confirmed class-name table to CSV."""
+    rows = export_class_name_map(data)
+    output_path = output if output.is_absolute() else (REPO_ROOT / output)
+    write_class_name_csv(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def run_export_item_name_map(data: bytes, output: Path) -> None:
+    """Export the confirmed item-name table to CSV."""
+    rows = export_item_name_map(data)
+    output_path = output if output.is_absolute() else (REPO_ROOT / output)
+    write_item_name_csv(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def run_export_npc_name_map(data: bytes, output: Path) -> None:
+    """Export dialogue-speaker prefixes as an NPC-style browseable CSV."""
+    rows = export_npc_name_map(data)
+    output_path = output if output.is_absolute() else (REPO_ROOT / output)
+    write_npc_name_csv(rows, output_path)
     print(f"Wrote {len(rows)} rows to {output_path}")
 
 
@@ -240,6 +260,86 @@ def run_list_character_names(data: bytes, contains: str | None, limit: int | Non
             f"ptr=0x{row.pointer_table_offset:08X} "
             f"rom=0x{row.name_rom_offset:08X} "
             f"name={row.decoded_name}"
+        )
+
+    return len(rows)
+
+
+def run_list_enemy_names(data: bytes, contains: str | None, limit: int | None) -> int:
+    """List confirmed enemy-type names in a compact terminal-friendly format."""
+    rows = export_enemy_name_map(data)
+    if contains is not None:
+        needle = contains.lower()
+        rows = [row for row in rows if needle in row.decoded_text.lower()]
+    if limit is not None:
+        rows = rows[:limit]
+
+    for row in rows:
+        print(
+            f"{row.local_index:>3} "
+            f"ptr=0x{row.pointer_table_offset:08X} "
+            f"rom=0x{row.text_rom_offset:08X} "
+            f"name={row.decoded_text}"
+        )
+
+    return len(rows)
+
+
+def run_list_class_names(data: bytes, contains: str | None, limit: int | None) -> int:
+    """List confirmed class names in a compact terminal-friendly format."""
+    rows = export_class_name_map(data)
+    if contains is not None:
+        needle = contains.lower()
+        rows = [row for row in rows if needle in row.decoded_text.lower()]
+    if limit is not None:
+        rows = rows[:limit]
+
+    for row in rows:
+        print(
+            f"{row.local_index:>3} "
+            f"ptr=0x{row.pointer_table_offset:08X} "
+            f"rom=0x{row.text_rom_offset:08X} "
+            f"name={row.decoded_text}"
+        )
+
+    return len(rows)
+
+
+def run_list_item_names(data: bytes, contains: str | None, limit: int | None) -> int:
+    """List confirmed item names in a compact terminal-friendly format."""
+    rows = export_item_name_map(data)
+    if contains is not None:
+        needle = contains.lower()
+        rows = [row for row in rows if needle in row.decoded_text.lower()]
+    if limit is not None:
+        rows = rows[:limit]
+
+    for row in rows:
+        print(
+            f"{row.local_index:>3} "
+            f"ptr=0x{row.pointer_table_offset:08X} "
+            f"rom=0x{row.text_rom_offset:08X} "
+            f"name={row.decoded_text}"
+        )
+
+    return len(rows)
+
+
+def run_list_npc_names(data: bytes, contains: str | None, limit: int | None) -> int:
+    """List dialogue-speaker prefixes in a compact terminal-friendly format."""
+    rows = export_npc_name_map(data)
+    if contains is not None:
+        needle = contains.lower()
+        rows = [row for row in rows if needle in row.speaker_name.lower()]
+    if limit is not None:
+        rows = rows[:limit]
+
+    for row in rows:
+        print(
+            f"{row.row_index:>3} "
+            f"count={row.occurrence_count:>3} "
+            f"rom=0x{row.first_rom_offset:08X} "
+            f"name={row.speaker_name}"
         )
 
     return len(rows)
@@ -357,6 +457,174 @@ def run_patch_character_name(
     print(f"Skipped references: {len(skipped_rows)}")
     if any(ref.source_kind == "canonical_name" for ref in patched_rows):
         print("Canonical pointer table updated.")
+    if skipped_rows:
+        print("Skipped rows:")
+        for ref in skipped_rows[:5]:
+            print(
+                f"  {ref.source_kind} "
+                f"rom=0x{ref.rom_offset:08X} "
+                f"src={ref.source_label}[{ref.source_index}]"
+            )
+    if in_place:
+        print(f"Patched source ROM in place: {final_output_path}")
+    else:
+        print(f"Wrote patched ROM: {final_output_path}")
+
+
+def run_patch_enemy_name(
+    data: bytes,
+    rom_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> None:
+    """Patch an enemy-type name everywhere we can confidently see it."""
+    output_path = None
+    if output is not None:
+        output_path = output if output.is_absolute() else (REPO_ROOT / output)
+
+    row, patched_rows, skipped_rows, final_output_path = patch_enemy_name_everywhere(
+        data=data,
+        source_path=rom_path,
+        current_name=current_name,
+        replacement_name=replacement_name,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+
+    print(f"Enemy name: {row.decoded_text}")
+    print(f"Replacement: {replacement_name}")
+    print(f"Patched references: {len(patched_rows)}")
+    print(f"Skipped references: {len(skipped_rows)}")
+    if skipped_rows:
+        print("Skipped rows:")
+        for ref in skipped_rows[:5]:
+            print(
+                f"  {ref.source_kind} "
+                f"rom=0x{ref.rom_offset:08X} "
+                f"src={ref.source_label}[{ref.source_index}]"
+            )
+    if in_place:
+        print(f"Patched source ROM in place: {final_output_path}")
+    else:
+        print(f"Wrote patched ROM: {final_output_path}")
+
+
+def run_patch_item_name(
+    data: bytes,
+    rom_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> None:
+    """Patch an item name everywhere we can confidently see it."""
+    output_path = None
+    if output is not None:
+        output_path = output if output.is_absolute() else (REPO_ROOT / output)
+
+    row, patched_rows, skipped_rows, final_output_path = patch_item_name_everywhere(
+        data=data,
+        source_path=rom_path,
+        current_name=current_name,
+        replacement_name=replacement_name,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+
+    print(f"Item name: {row.decoded_text}")
+    print(f"Replacement: {replacement_name}")
+    print(f"Patched references: {len(patched_rows)}")
+    print(f"Skipped references: {len(skipped_rows)}")
+    if skipped_rows:
+        print("Skipped rows:")
+        for ref in skipped_rows[:5]:
+            print(
+                f"  {ref.source_kind} "
+                f"rom=0x{ref.rom_offset:08X} "
+                f"src={ref.source_label}[{ref.source_index}]"
+            )
+    if in_place:
+        print(f"Patched source ROM in place: {final_output_path}")
+    else:
+        print(f"Wrote patched ROM: {final_output_path}")
+
+
+def run_patch_npc_name(
+    data: bytes,
+    rom_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> None:
+    """Patch a dialogue-speaker or NPC-style name across dialogue surfaces."""
+    output_path = None
+    if output is not None:
+        output_path = output if output.is_absolute() else (REPO_ROOT / output)
+
+    row, patched_rows, skipped_rows, final_output_path = patch_npc_name_everywhere(
+        data=data,
+        source_path=rom_path,
+        current_name=current_name,
+        replacement_name=replacement_name,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+
+    print(f"NPC name: {row.speaker_name}")
+    print(f"Replacement: {replacement_name}")
+    print(f"Patched references: {len(patched_rows)}")
+    print(f"Skipped references: {len(skipped_rows)}")
+    if skipped_rows:
+        print("Skipped rows:")
+        for ref in skipped_rows[:5]:
+            print(
+                f"  {ref.source_kind} "
+                f"rom=0x{ref.rom_offset:08X} "
+                f"src={ref.source_label}[{ref.source_index}]"
+            )
+    if in_place:
+        print(f"Patched source ROM in place: {final_output_path}")
+    else:
+        print(f"Wrote patched ROM: {final_output_path}")
+
+
+def run_patch_class_name(
+    data: bytes,
+    rom_path: Path,
+    current_name: str,
+    replacement_name: str,
+    output: Path | None,
+    overwrite: bool,
+    in_place: bool,
+) -> None:
+    """Patch a class name everywhere we can confidently see it."""
+    output_path = None
+    if output is not None:
+        output_path = output if output.is_absolute() else (REPO_ROOT / output)
+
+    row, patched_rows, skipped_rows, final_output_path = patch_class_name_everywhere(
+        data=data,
+        source_path=rom_path,
+        current_name=current_name,
+        replacement_name=replacement_name,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+
+    print(f"Class name: {row.decoded_text}")
+    print(f"Replacement: {replacement_name}")
+    print(f"Patched references: {len(patched_rows)}")
+    print(f"Skipped references: {len(skipped_rows)}")
     if skipped_rows:
         print("Skipped rows:")
         for ref in skipped_rows[:5]:
@@ -497,17 +765,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="How to decode the pointed data. Default: rotdd",
     )
 
-    export_parser = subparsers.add_parser(
-        "export-known-text-map",
-        help="Export the currently known ROTDD text tables to a CSV artifact.",
-    )
-    export_parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("research/raw/text-map.csv"),
-        help="Output CSV path, relative to the repository root by default.",
-    )
-
     character_export_parser = subparsers.add_parser(
         "export-character-name-map",
         help="Export the canonical character-name pointer table to a CSV artifact.",
@@ -519,18 +776,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output CSV path, relative to the repository root by default.",
     )
 
-    character_reference_export_parser = subparsers.add_parser(
-        "export-character-name-references",
-        help="Export every current-name reference we can see in the ROM.",
+    class_export_parser = subparsers.add_parser(
+        "export-class-name-map",
+        help="Export the confirmed class-name table to a CSV artifact.",
     )
-    character_reference_export_parser.add_argument(
-        "current_name",
-        help="Current character name to search for in the ROM.",
-    )
-    character_reference_export_parser.add_argument(
+    class_export_parser.add_argument(
         "--output",
         type=Path,
-        default=Path("research/raw/character-name-references.csv"),
+        default=Path("research/raw/class-names.csv"),
+        help="Output CSV path, relative to the repository root by default.",
+    )
+
+    enemy_export_parser = subparsers.add_parser(
+        "export-enemy-name-map",
+        help="Export the confirmed enemy-type name table to a CSV artifact.",
+    )
+    enemy_export_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("research/raw/enemy-names.csv"),
+        help="Output CSV path, relative to the repository root by default.",
+    )
+
+    item_export_parser = subparsers.add_parser(
+        "export-item-name-map",
+        help="Export the confirmed item-name table to a CSV artifact.",
+    )
+    item_export_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("research/raw/item-names.csv"),
+        help="Output CSV path, relative to the repository root by default.",
+    )
+
+    npc_export_parser = subparsers.add_parser(
+        "export-npc-name-map",
+        help="Export dialogue speaker prefixes as a browseable NPC-style CSV.",
+    )
+    npc_export_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("research/raw/npc-names.csv"),
         help="Output CSV path, relative to the repository root by default.",
     )
 
@@ -573,6 +859,62 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only list names whose decoded text contains this substring.",
     )
     character_list_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of rows to print.",
+    )
+
+    class_list_parser = subparsers.add_parser(
+        "list-class-names",
+        help="List the confirmed class names from the current slice.",
+    )
+    class_list_parser.add_argument(
+        "--contains",
+        help="Only list names whose decoded text contains this substring.",
+    )
+    class_list_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of rows to print.",
+    )
+
+    enemy_list_parser = subparsers.add_parser(
+        "list-enemy-names",
+        help="List the confirmed enemy-type names from the current table.",
+    )
+    enemy_list_parser.add_argument(
+        "--contains",
+        help="Only list names whose decoded text contains this substring.",
+    )
+    enemy_list_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of rows to print.",
+    )
+
+    item_list_parser = subparsers.add_parser(
+        "list-item-names",
+        help="List the confirmed item names from the current table.",
+    )
+    item_list_parser.add_argument(
+        "--contains",
+        help="Only list names whose decoded text contains this substring.",
+    )
+    item_list_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of rows to print.",
+    )
+
+    npc_list_parser = subparsers.add_parser(
+        "list-npc-names",
+        help="List dialogue-speaker prefixes extracted from the corpus.",
+    )
+    npc_list_parser.add_argument(
+        "--contains",
+        help="Only list names whose decoded text contains this substring.",
+    )
+    npc_list_parser.add_argument(
         "--limit",
         type=int,
         help="Maximum number of rows to print.",
@@ -674,6 +1016,234 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write directly into the source ROM. Unsafe.",
     )
 
+    class_patch_parser = subparsers.add_parser(
+        "patch-class-name",
+        help="Case-sensitive global rename across the class table and matched text references.",
+    )
+    class_patch_parser.add_argument("current_name", help="Existing class name to replace.")
+    class_patch_parser.add_argument("replacement", help="New class name.")
+    class_patch_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    class_patch_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    class_patch_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+    enemy_patch_parser = subparsers.add_parser(
+        "patch-enemy-name",
+        help="Case-sensitive global rename across the enemy-type name table and matched text references.",
+    )
+    enemy_patch_parser.add_argument("current_name", help="Existing enemy name to replace.")
+    enemy_patch_parser.add_argument("replacement", help="New enemy name.")
+    enemy_patch_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    enemy_patch_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    enemy_patch_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+    item_patch_parser = subparsers.add_parser(
+        "patch-item-name",
+        help="Case-sensitive global rename across the item table and matched text references.",
+    )
+    item_patch_parser.add_argument("current_name", help="Existing item name to replace.")
+    item_patch_parser.add_argument("replacement", help="New item name.")
+    item_patch_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    item_patch_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    item_patch_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+    npc_patch_parser = subparsers.add_parser(
+        "patch-npc-name",
+        help="Case-sensitive global rename across dialogue speaker prefixes and matched text references.",
+    )
+    npc_patch_parser.add_argument("current_name", help="Existing NPC or speaker name to replace.")
+    npc_patch_parser.add_argument("replacement", help="New NPC or speaker name.")
+    npc_patch_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    npc_patch_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    npc_patch_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+    character_parser = subparsers.add_parser(
+        "character",
+        help="Character-focused actions using a name + action command shape.",
+    )
+    character_parser.add_argument("name", help="Character name to modify.")
+    character_subparsers = character_parser.add_subparsers(dest="character_action", required=True)
+
+    character_rename_parser = character_subparsers.add_parser(
+        "rename",
+        help="Rename one character everywhere we can confidently see the old name.",
+    )
+    character_rename_parser.add_argument("replacement", help="New character name.")
+    character_rename_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    character_rename_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    character_rename_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+    class_parser = subparsers.add_parser(
+        "class",
+        help="Class-focused actions using a name + action command shape.",
+    )
+    class_parser.add_argument("name", help="Class name to modify.")
+    class_subparsers = class_parser.add_subparsers(dest="class_action", required=True)
+
+    class_rename_parser = class_subparsers.add_parser(
+        "rename",
+        help="Rename one class label everywhere we can confidently see the old name.",
+    )
+    class_rename_parser.add_argument("replacement", help="New class name.")
+    class_rename_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    class_rename_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    class_rename_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+    item_parser = subparsers.add_parser(
+        "item",
+        help="Item-focused actions using a name + action command shape.",
+    )
+    item_parser.add_argument("name", help="Item name to modify.")
+    item_subparsers = item_parser.add_subparsers(dest="item_action", required=True)
+
+    item_rename_parser = item_subparsers.add_parser(
+        "rename",
+        help="Rename one item label everywhere we can confidently see the old name.",
+    )
+    item_rename_parser.add_argument("replacement", help="New item name.")
+    item_rename_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    item_rename_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    item_rename_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+    npc_parser = subparsers.add_parser(
+        "npc",
+        help="NPC/dialogue-speaker actions using a name + action command shape.",
+    )
+    npc_parser.add_argument("name", help="NPC or speaker name to modify.")
+    npc_subparsers = npc_parser.add_subparsers(dest="npc_action", required=True)
+
+    npc_rename_parser = npc_subparsers.add_parser(
+        "rename",
+        help="Rename one NPC or speaker name across dialogue surfaces.",
+    )
+    npc_rename_parser.add_argument("replacement", help="New NPC or speaker name.")
+    npc_rename_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    npc_rename_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    npc_rename_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+    enemy_parser = subparsers.add_parser(
+        "enemy",
+        help="Enemy-focused actions using a name + action command shape.",
+    )
+    enemy_parser.add_argument("name", help="Enemy name to modify.")
+    enemy_subparsers = enemy_parser.add_subparsers(dest="enemy_action", required=True)
+
+    enemy_rename_parser = enemy_subparsers.add_parser(
+        "rename",
+        help="Rename one enemy-type label everywhere we can confidently see the old name.",
+    )
+    enemy_rename_parser.add_argument("replacement", help="New enemy name.")
+    enemy_rename_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    enemy_rename_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    enemy_rename_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
     patch_offset_parser = subparsers.add_parser(
         "patch-text-at-offset",
         help="Patch a same-length ROTDD text run at a literal ROM offset.",
@@ -737,14 +1307,20 @@ def main() -> int:
     if args.command == "dump-pointer-table":
         dump_pointer_table(data, args.offset, args.count, args.base, args.codec)
         return 0
-    if args.command == "export-known-text-map":
-        run_export_known_text_map(data, args.output)
-        return 0
     if args.command == "export-character-name-map":
         run_export_character_name_map(data, args.output)
         return 0
-    if args.command == "export-character-name-references":
-        run_export_character_name_references(data, args.current_name, args.output)
+    if args.command == "export-class-name-map":
+        run_export_class_name_map(data, args.output)
+        return 0
+    if args.command == "export-enemy-name-map":
+        run_export_enemy_name_map(data, args.output)
+        return 0
+    if args.command == "export-item-name-map":
+        run_export_item_name_map(data, args.output)
+        return 0
+    if args.command == "export-npc-name-map":
+        run_export_npc_name_map(data, args.output)
         return 0
     if args.command == "export-text-surface-map":
         run_export_text_surface_map(
@@ -762,6 +1338,14 @@ def main() -> int:
         return 0
     if args.command == "list-character-names":
         return 0 if run_list_character_names(data, args.contains, args.limit) else 1
+    if args.command == "list-class-names":
+        return 0 if run_list_class_names(data, args.contains, args.limit) else 1
+    if args.command == "list-enemy-names":
+        return 0 if run_list_enemy_names(data, args.contains, args.limit) else 1
+    if args.command == "list-item-names":
+        return 0 if run_list_item_names(data, args.contains, args.limit) else 1
+    if args.command == "list-npc-names":
+        return 0 if run_list_npc_names(data, args.contains, args.limit) else 1
     if args.command == "list-known-text":
         return 0 if run_list_known_text(data, args.table, args.category, args.contains, args.limit, args.show_notes) else 1
     if args.command == "patch-known-text":
@@ -789,6 +1373,115 @@ def main() -> int:
             in_place=args.in_place,
         )
         return 0
+    if args.command == "patch-class-name":
+        run_patch_class_name(
+            data=data,
+            rom_path=rom_path,
+            current_name=args.current_name,
+            replacement_name=args.replacement,
+            output=args.output,
+            overwrite=args.overwrite,
+            in_place=args.in_place,
+        )
+        return 0
+    if args.command == "patch-enemy-name":
+        run_patch_enemy_name(
+            data=data,
+            rom_path=rom_path,
+            current_name=args.current_name,
+            replacement_name=args.replacement,
+            output=args.output,
+            overwrite=args.overwrite,
+            in_place=args.in_place,
+        )
+        return 0
+    if args.command == "patch-item-name":
+        run_patch_item_name(
+            data=data,
+            rom_path=rom_path,
+            current_name=args.current_name,
+            replacement_name=args.replacement,
+            output=args.output,
+            overwrite=args.overwrite,
+            in_place=args.in_place,
+        )
+        return 0
+    if args.command == "patch-npc-name":
+        run_patch_npc_name(
+            data=data,
+            rom_path=rom_path,
+            current_name=args.current_name,
+            replacement_name=args.replacement,
+            output=args.output,
+            overwrite=args.overwrite,
+            in_place=args.in_place,
+        )
+        return 0
+    if args.command == "character":
+        if args.character_action == "rename":
+            run_patch_character_name(
+                data=data,
+                rom_path=rom_path,
+                current_name=args.name,
+                replacement_name=args.replacement,
+                output=args.output,
+                overwrite=args.overwrite,
+                in_place=args.in_place,
+            )
+            return 0
+        parser.error(f"Unhandled character action: {args.character_action}")
+    if args.command == "class":
+        if args.class_action == "rename":
+            run_patch_class_name(
+                data=data,
+                rom_path=rom_path,
+                current_name=args.name,
+                replacement_name=args.replacement,
+                output=args.output,
+                overwrite=args.overwrite,
+                in_place=args.in_place,
+            )
+            return 0
+        parser.error(f"Unhandled class action: {args.class_action}")
+    if args.command == "item":
+        if args.item_action == "rename":
+            run_patch_item_name(
+                data=data,
+                rom_path=rom_path,
+                current_name=args.name,
+                replacement_name=args.replacement,
+                output=args.output,
+                overwrite=args.overwrite,
+                in_place=args.in_place,
+            )
+            return 0
+        parser.error(f"Unhandled item action: {args.item_action}")
+    if args.command == "npc":
+        if args.npc_action == "rename":
+            run_patch_npc_name(
+                data=data,
+                rom_path=rom_path,
+                current_name=args.name,
+                replacement_name=args.replacement,
+                output=args.output,
+                overwrite=args.overwrite,
+                in_place=args.in_place,
+            )
+            return 0
+        parser.error(f"Unhandled npc action: {args.npc_action}")
+    if args.command == "enemy":
+        if args.enemy_action == "rename":
+            run_patch_enemy_name(
+                data=data,
+                rom_path=rom_path,
+                current_name=args.name,
+                replacement_name=args.replacement,
+                output=args.output,
+                overwrite=args.overwrite,
+                in_place=args.in_place,
+            )
+            return 0
+        parser.error(f"Unhandled enemy action: {args.enemy_action}")
     if args.command == "patch-text-at-offset":
         run_patch_text_at_offset(
             data=data,
