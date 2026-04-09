@@ -1,12 +1,8 @@
 # Text Table Map
 
-This note explains the split name-table exports that replaced the old unified text-map CSV.
+This note records the currently confirmed name-table slices and the most useful boundaries for browsing and patching them.
 
-The file is meant to be machine-friendly and human-readable at the same time. It should be suitable both for research review and for future tooling.
-
-## What it contains
-
-The current confirmed slices are:
+The split entity exports are the important output now:
 
 - `character-names.csv`
 - `class-names.csv`
@@ -14,57 +10,67 @@ The current confirmed slices are:
 - `item-names.csv`
 - `npc-names.csv`
 
-Each row records the compact name-table fields:
+The broader dialogue corpus lives in `research/raw/text-surfaces.csv` and uses `type` labels such as `unsorted`, `battle_text`, and `menu_text`. That corpus is documented separately because it is a different workflow from the split name tables.
 
-- the local index inside that segment
-- the pointer-table offset
-- the resolved ROM offset
-- decoded text
-- text length
+## Confirmed Name Slices
 
-The raw CSVs stay intentionally column-light so they are easier to scan and edit by hand. Table-specific caveats and duplicate warnings live in this writeup instead of in an extra per-row annotation column.
+### Character names
 
-## Confirmed item-table finding
+- Plain ASCII pointer table
+- Pointer table offset: `0x0056F578`
+- Current confirmed row count: `33`
+- Current max name length for this table: `8` ASCII characters
 
-The item display-name table is real and stable.
+### Class names
 
-Examples:
+- Confirmed slice of a partial ROTDD name table
+- Table area: `0x0056F000`
+- Confirmed rows: `39`
+- Current max name length: `12` ASCII characters
 
-- `Kenji`, `Rifle`, `Papa Doll`, `Youji`, and `Taboo Box` appear near the end of the display-name table
-- `Card` and `Used Card` each appear twice in the display-name table
+### Enemy names
 
-## Working lookup model
+- Confirmed slice of the same partial ROTDD name table as the class names
+- Table area: `0x0056F09C`
+- Confirmed rows: `79`
+- Current max name length: `12` ASCII characters
+- This workflow is still experimental while the broad repoint rules are being verified
 
-```mermaid
-flowchart LR
-    A["Game-specific ID or menu context"] --> B["Pointer-table entry in ROM"]
-    B --> C["ROM text address"]
-    C --> D["ROTDD custom-encoded bytes"]
-    D --> E["Decoded on-screen text"]
-```
+### Item names
 
-This is the current best model for spells and item names.
+- Confirmed ROTDD menu-name table
+- Table area begins around `0x0056EE5C`
+- Item names are currently browsable and patchable as a separate workflow
 
-The confirmed class-name and enemy-name slices are separate visible-name tables that live in the same general name bank after the item names.
+### NPC names
 
-## Why the export matters
+- Dialogue-speaker prefixes are extracted from the corpus, not from a fixed pointer table
+- NPC names are kept separate from playable names, classes, enemies, and items
+- NPC name length is limited by the dialogue box, not by a fixed 12-character cap
 
-The split name-table exports give us a stable handoff point between research and tooling.
+## Why the split matters
 
-- researchers can review offsets and text without decoding bytes manually every time
-- tools can consume one CSV per entity type instead of scraping terminal output
-- future UI work can build on structured artifacts instead of hardcoded ad hoc dumps
+The split exports keep each name workflow small and readable:
 
-## Current editing workflow
+- the canonical character roster stays separate from class and enemy slices
+- item names can be browsed and edited without dragging dialogue data into the same CSV
+- NPC names are derived from dialogue text and tracked independently
+- the dialogue corpus stays focused on screen-sized text, not entity metadata
 
-The repo now supports safe same-length patching driven by known table rows.
+## Relationship To The Corpus
 
-The current workflow is:
+The dialogue corpus is still the best source for visible story text.
 
-1. choose an item row from `item-names.csv` or `list-item-names`
-2. confirm the target string and offsets
-3. prepare a replacement that encodes to the same byte length
-4. patch the ROM safely with `patch-known-text`
-5. verify in emulator
+- it drives `text-surface export template`
+- it feeds the broad story rewrite workflow
+- it is where rename side effects show up when names appear in dialogue or menu text
 
-Longer replacements still require future repointing work.
+For the current wrapping and codec rules, see [`research/text-mechanics.md`](./text-mechanics.md).
+
+## Current Guidance
+
+- use the entity CSVs for browsing and renaming named things
+- use `research/raw/text-surfaces.csv` and its templates for dialogue and other surface text
+- treat enemy renames as experimental until the broad repoint behavior is fully verified
+- treat multi-line template rewriting as experimental until the pointer rewrite path is proven safe
+
