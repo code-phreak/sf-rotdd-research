@@ -432,6 +432,18 @@ def normalize_surface_replacement_text(text: str) -> tuple[str, bool]:
     return normalized, auto_wrapped
 
 
+def reflow_surface_replacement_text(text: str) -> tuple[str, bool]:
+    """
+    Rebuild a dialogue-like blob into fresh screen-sized pages.
+
+    Existing hard line/page breaks are discarded so renamed names can shift the
+    surrounding text naturally instead of inheriting stale wrap points.
+    """
+
+    stripped = text.replace("<NEWLINE>", " ").replace("<PAGE_BREAK>", " ")
+    return normalize_surface_replacement_text(stripped)
+
+
 def patch_known_text(
     data: bytes,
     source_path: Path,
@@ -731,6 +743,28 @@ def _ensure_replacement_name_is_unique(
         )
 
 
+def _validate_ascii_replacement_name(
+    replacement_name: str,
+    *,
+    entity_label: str,
+    max_length: int | None = None,
+) -> bytes:
+    """Validate a replacement name before any ROM-wide scanning starts."""
+
+    try:
+        replacement_bytes = replacement_name.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"{entity_label.capitalize()} names must be plain ASCII for now.") from exc
+
+    if not replacement_bytes:
+        raise ValueError(f"{entity_label.capitalize()} names cannot be empty.")
+    if max_length is not None and len(replacement_bytes) > max_length:
+        raise ValueError(
+            f"{entity_label.capitalize()} names are currently limited to {max_length} ASCII characters."
+        )
+    return replacement_bytes
+
+
 def _append_repoint_payload(mutable: bytearray, payload: bytes) -> int:
     """Append a replacement payload to the end of the ROM copy and return its offset."""
 
@@ -816,27 +850,27 @@ def _patch_rotdd_surface_text(
 
     original_bytes = read_terminated_string(data, rom_offset, terminator=ROTDD_TERMINATOR)
     original_length = len(original_bytes)
+    reflowed_text, reflowed_auto_wrapped = reflow_surface_replacement_text(replacement_text)
 
     try:
         normalized_text, replacement_bytes, auto_wrapped, _dropped_unknowns = fit_surface_text_to_length(
-            replacement_text,
+            reflowed_text,
             original_length,
         )
         mutable[rom_offset:rom_offset + original_length] = replacement_bytes
-        return True, rom_offset, len(replacement_bytes), auto_wrapped
+        return True, rom_offset, len(replacement_bytes), auto_wrapped or reflowed_auto_wrapped
     except ValueError:
-        normalized_text, auto_wrapped = normalize_surface_replacement_text(replacement_text)
-        replacement_bytes = encode_rotdd_surface_text(normalized_text)
+        replacement_bytes = encode_rotdd_surface_text(reflowed_text)
         pointer_hits = _find_pointer_hits(data, rom_offset)
         if pointer_hits:
             payload = replacement_bytes + bytes([ROTDD_TERMINATOR])
             target_rom_offset = _append_repoint_payload(mutable, payload)
             _rewrite_pointer_hits(mutable, pointer_hits, target_rom_offset)
-            return True, target_rom_offset, len(payload), auto_wrapped
+            return True, target_rom_offset, len(payload), reflowed_auto_wrapped
         if allow_unsafe_write:
-            unsafe_payload = _force_rotdd_in_place_payload(normalized_text, original_length)
+            unsafe_payload = _force_rotdd_in_place_payload(reflowed_text, original_length)
             mutable[rom_offset:rom_offset + original_length] = unsafe_payload
-            return True, rom_offset, len(unsafe_payload), auto_wrapped
+            return True, rom_offset, len(unsafe_payload), reflowed_auto_wrapped
         raise ValueError("Replacement is too long for this ROTDD run and no pointer table was found.")
 
 
@@ -873,9 +907,10 @@ def _patch_rotdd_run(
     if not changed:
         return False, rom_offset, original_length, False
 
+    reflowed_text, auto_wrapped = reflow_surface_replacement_text(updated_text)
     try:
         normalized_text, replacement_bytes, _auto_wrapped, _dropped_unknowns = fit_surface_text_to_length(
-            updated_text,
+            reflowed_text,
             original_length,
             allow_placeholder_drop=True,
         )
@@ -883,22 +918,22 @@ def _patch_rotdd_run(
         pointer_hits = _find_pointer_hits(data, rom_offset)
         if not pointer_hits:
             if allow_unsafe_write:
-                normalized_text, _auto_wrapped = normalize_surface_replacement_text(updated_text)
+                normalized_text = reflowed_text
                 replacement_bytes = _force_rotdd_in_place_payload(normalized_text, original_length)
                 mutable[rom_offset:rom_offset + original_length] = replacement_bytes
-                return True, rom_offset, len(replacement_bytes), _auto_wrapped
+                return True, rom_offset, len(replacement_bytes), auto_wrapped
             raise ValueError(
                 "Replacement is too long for this inline text run and no pointer table was found."
             )
 
-        normalized_text, _auto_wrapped = normalize_surface_replacement_text(updated_text)
+        normalized_text = reflowed_text
         replacement_bytes = encode_rotdd_surface_text(normalized_text) + bytes([ROTDD_TERMINATOR])
         target_rom_offset = _append_repoint_payload(mutable, replacement_bytes)
         _rewrite_pointer_hits(mutable, pointer_hits, target_rom_offset)
-        return True, target_rom_offset, len(replacement_bytes), _auto_wrapped
+        return True, target_rom_offset, len(replacement_bytes), auto_wrapped
 
     mutable[rom_offset:rom_offset + original_length] = replacement_bytes
-    return True, rom_offset, len(replacement_bytes), False
+    return True, rom_offset, len(replacement_bytes), auto_wrapped
 
 
 def _patch_ascii_run(
@@ -964,19 +999,12 @@ def patch_character_name_everywhere(
     _report_progress(progress_callback, 0.0, "Locating character row")
     name_rows = export_character_name_map(data)
     canonical_row = select_character_name_row(name_rows, current_name)
+    replacement_bytes = _validate_ascii_replacement_name(
+        replacement_name,
+        entity_label="character",
+        max_length=ROTDD_CHARACTER_NAME_MAX_LENGTH,
+    )
     _ensure_replacement_name_is_unique(data, current_name, replacement_name, "character")
-
-    try:
-        replacement_bytes = replacement_name.encode("ascii")
-    except UnicodeEncodeError as exc:
-        raise ValueError("Character names must be plain ASCII for now.") from exc
-
-    if not replacement_bytes:
-        raise ValueError("Character names cannot be empty.")
-    if len(replacement_bytes) > ROTDD_CHARACTER_NAME_MAX_LENGTH:
-        raise ValueError(
-            f"Character names are currently limited to {ROTDD_CHARACTER_NAME_MAX_LENGTH} ASCII characters."
-        )
 
     mutable = bytearray(data)
     pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
@@ -1373,19 +1401,12 @@ def _patch_named_table_everywhere(
     ]
     if not source_rows:
         raise ValueError(f"No {table_label}-name row found with decoded text {current_name!r}.")
+    replacement_bytes = _validate_ascii_replacement_name(
+        replacement_name,
+        entity_label=table_label,
+        max_length=max_length,
+    )
     _ensure_replacement_name_is_unique(data, current_name, replacement_name, table_label)
-
-    try:
-        replacement_bytes = replacement_name.encode("ascii")
-    except UnicodeEncodeError as exc:
-        raise ValueError(f"{table_label.capitalize()} names must be plain ASCII for now.") from exc
-
-    if not replacement_bytes:
-        raise ValueError(f"{table_label.capitalize()} names cannot be empty.")
-    if len(replacement_bytes) > max_length:
-        raise ValueError(
-            f"{table_label.capitalize()} names are currently limited to {max_length} ASCII characters."
-        )
 
     mutable = bytearray(data)
     pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
@@ -1661,6 +1682,11 @@ def patch_class_name_everywhere(
 ) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
     """Patch a class name across the confirmed class slice and matched references."""
 
+    _validate_ascii_replacement_name(
+        replacement_name,
+        entity_label="class",
+        max_length=ROTDD_CLASS_NAME_MAX_LENGTH,
+    )
     class_rows = export_class_name_map(data)
     return _patch_named_table_everywhere(
         data=data,
@@ -1693,6 +1719,11 @@ def patch_enemy_name_everywhere(
 ) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
     """Patch an enemy name across the confirmed enemy slice and matched references."""
 
+    _validate_ascii_replacement_name(
+        replacement_name,
+        entity_label="enemy",
+        max_length=ROTDD_ENEMY_NAME_MAX_LENGTH,
+    )
     enemy_rows = export_enemy_name_map(data)
     return _patch_named_table_everywhere(
         data=data,
@@ -1725,6 +1756,11 @@ def patch_item_name_everywhere(
 ) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
     """Patch an item name across the confirmed item slice and matched references."""
 
+    _validate_ascii_replacement_name(
+        replacement_name,
+        entity_label="item",
+        max_length=ROTDD_ITEM_NAME_MAX_LENGTH,
+    )
     item_rows = export_item_name_map(data)
     return _patch_named_table_everywhere(
         data=data,
@@ -1764,18 +1800,15 @@ def patch_npc_name_everywhere(
     """
 
     _report_progress(progress_callback, 0.0, "Locating NPC row")
+    replacement_bytes = _validate_ascii_replacement_name(
+        replacement_name,
+        entity_label="npc",
+        max_length=None,
+    )
     npc_rows = export_npc_name_map(data)
     npc_row = select_npc_name_row(npc_rows, current_name)
     _ensure_replacement_name_is_unique(data, current_name, replacement_name, "NPC")
     allow_unsafe_write = mode == "liberal"
-
-    try:
-        replacement_bytes = replacement_name.encode("ascii")
-    except UnicodeEncodeError as exc:
-        raise ValueError("NPC names must be plain ASCII for now.") from exc
-
-    if not replacement_bytes:
-        raise ValueError("NPC names cannot be empty.")
 
     mutable = bytearray(data)
     pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
@@ -2021,19 +2054,12 @@ def patch_character_name(
 
     rows = export_character_name_map(data)
     row = select_character_name_row(rows, current_name)
+    replacement_bytes = _validate_ascii_replacement_name(
+        replacement_name,
+        entity_label="character",
+        max_length=ROTDD_CHARACTER_NAME_MAX_LENGTH,
+    )
     _ensure_replacement_name_is_unique(data, current_name, replacement_name, "character")
-
-    try:
-        replacement_bytes = replacement_name.encode("ascii")
-    except UnicodeEncodeError as exc:
-        raise ValueError("Character names must be plain ASCII for now.") from exc
-
-    if not replacement_bytes:
-        raise ValueError("Character names cannot be empty.")
-    if len(replacement_bytes) > ROTDD_CHARACTER_NAME_MAX_LENGTH:
-        raise ValueError(
-            f"Character names are currently limited to {ROTDD_CHARACTER_NAME_MAX_LENGTH} ASCII characters."
-        )
 
     mutable = bytearray(data)
     target_rom_offset = row.name_rom_offset

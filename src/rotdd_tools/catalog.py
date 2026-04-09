@@ -22,6 +22,7 @@ from .gba import (
     read_terminated_string,
 )
 from .models import (
+    EntityNameTemplateRow,
     CharacterNameRow,
     NpcNameRow,
     TextMapRow,
@@ -792,6 +793,20 @@ def write_text_surface_template_csv(
             handle.write(f"0x{row.rom_offset:08X},\"{decoded_text}\"\n")
 
 
+def write_entity_name_template_csv(
+    rows: list[EntityNameTemplateRow],
+    output_path: Path,
+) -> None:
+    """Write an editable entity-name template CSV to disk."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["current_name", "replacement_name"])
+        for row in rows:
+            writer.writerow([row.current_name, row.replacement_name])
+
+
 def load_text_surface_template_csv(input_path: Path) -> list[TextSurfaceTemplateRow]:
     """Load a two-column text-surface template CSV from disk."""
 
@@ -803,6 +818,22 @@ def load_text_surface_template_csv(input_path: Path) -> list[TextSurfaceTemplate
                 TextSurfaceTemplateRow(
                     rom_offset=int((row.get("rom_offset") or "0"), 0),
                     decoded_text=(row.get("decoded_text") or ""),
+                )
+            )
+    return rows
+
+
+def load_entity_name_template_csv(input_path: Path) -> list[EntityNameTemplateRow]:
+    """Load an entity-name template CSV from disk."""
+
+    rows: list[EntityNameTemplateRow] = []
+    with input_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            rows.append(
+                EntityNameTemplateRow(
+                    current_name=(row.get("current_name") or "").strip(),
+                    replacement_name=(row.get("replacement_name") or "").strip(),
                 )
             )
     return rows

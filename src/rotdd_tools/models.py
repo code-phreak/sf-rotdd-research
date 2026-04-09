@@ -60,6 +60,14 @@ class TextSurfaceTemplateRow:
 
 
 @dataclass(frozen=True)
+class EntityNameTemplateRow:
+    """One editable row from an entity-name template CSV."""
+
+    current_name: str
+    replacement_name: str
+
+
+@dataclass(frozen=True)
 class CharacterNameRow:
     """One exported row from the canonical character-name pointer table."""
 

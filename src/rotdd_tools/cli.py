@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import random
 import sys
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from .catalog import (
+    load_entity_name_template_csv,
     export_character_name_map,
     export_class_name_map,
     export_enemy_name_map,
@@ -26,9 +29,11 @@ from .catalog import (
     write_item_name_csv,
     write_character_name_csv,
     write_npc_name_csv,
+    write_entity_name_template_csv,
     write_text_surface_template_csv,
     write_text_surface_csv,
 )
+from .models import EntityNameTemplateRow
 from .editing import (
     patch_character_name_everywhere,
     patch_class_name_everywhere,
@@ -38,6 +43,7 @@ from .editing import (
     patch_npc_name_everywhere,
     patch_text_at_offset,
     patch_text_surface_template_file,
+    resolve_patch_output_path,
 )
 from .gba import GBA_ROM_BASE, format_ascii, iter_find_all, printable_ascii, read_terminated_string
 from .paths import REPO_ROOT, resolve_rom_path
@@ -314,6 +320,17 @@ def _add_entity_tree_parser(
         help="Output CSV path, relative to the repository root by default.",
     )
 
+    export_template_parser = export_subparsers.add_parser(
+        "template",
+        help=f"Export an editable template for the current {display_name} names.",
+    )
+    export_template_parser.add_argument(
+        "--output",
+        type=Path,
+        default=_entity_template_default_path(display_name),
+        help="Output CSV path, relative to the repository root by default.",
+    )
+
     list_parser = entity_subparsers.add_parser("list", help=list_help)
     list_subparsers = list_parser.add_subparsers(dest="target", required=True)
     list_names_parser = list_subparsers.add_parser(
@@ -346,6 +363,24 @@ def _add_entity_tree_parser(
     )
     _add_write_args(patch_name_parser)
 
+    patch_file_parser = patch_subparsers.add_parser(
+        "file",
+        help=f"Patch many {display_name} renames from an editable template CSV.",
+    )
+    patch_file_parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Input CSV path with current_name and replacement_name columns.",
+    )
+    patch_file_parser.add_argument(
+        "--mode",
+        choices=["strict", "liberal"],
+        default="strict",
+        help="Strict is the default conservative mode. Liberal may rewrite unsafe references in place.",
+    )
+    _add_write_args(patch_file_parser)
+
     if allow_stat:
         patch_stat_parser = patch_subparsers.add_parser(
             "stat",
@@ -360,7 +395,11 @@ def _add_entity_tree_parser(
 def _entity_patch_is_progress_command(args: argparse.Namespace) -> bool:
     """Return True when an entity command should display progress."""
 
-    return args.command in {"character", "class", "enemy", "item", "npc"} and getattr(args, "action", None) == "patch" and getattr(args, "target", None) == "name"
+    return (
+        args.command in {"character", "class", "enemy", "item", "npc"}
+        and getattr(args, "action", None) == "patch"
+        and getattr(args, "target", None) in {"name", "file"}
+    )
 
 
 def _run_entity_name_patch(
@@ -427,6 +466,40 @@ def _run_entity_name_export(
         "npc": run_export_npc_name_map,
     }
     exporters[entity](data, args.output)
+
+
+def _run_entity_name_template_export(
+    *,
+    entity: str,
+    data: bytes,
+    args: argparse.Namespace,
+) -> None:
+    """Dispatch a tree-style entity template export command."""
+
+    run_export_entity_name_template(data, entity, args.output)
+
+
+def _run_entity_name_patch_file(
+    *,
+    entity: str,
+    data: bytes,
+    rom_path: Path,
+    args: argparse.Namespace,
+    progress_callback: Callable[[float, str], None] | None,
+) -> list[str]:
+    """Dispatch a tree-style entity bulk-patch command."""
+
+    return run_patch_entity_name_template_file(
+        entity=entity,
+        data=data,
+        rom_path=rom_path,
+        input_path=args.input,
+        output=args.output,
+        overwrite=args.overwrite,
+        in_place=args.in_place,
+        mode=args.mode,
+        progress_callback=progress_callback,
+    )
 
 
 def search_rotdd(data: bytes, term: str) -> int:
@@ -594,6 +667,165 @@ def run_export_npc_name_map(data: bytes, output: Path) -> None:
     output_path = output if output.is_absolute() else (REPO_ROOT / output)
     write_npc_name_csv(rows, output_path)
     print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def _entity_name_rows(data: bytes, entity: str) -> list[str]:
+    """Return the visible names that should seed an entity template export."""
+
+    if entity == "character":
+        return [row.decoded_name for row in export_character_name_map(data)]
+    if entity == "class":
+        return [row.decoded_text for row in export_class_name_map(data)]
+    if entity == "enemy":
+        return [row.decoded_text for row in export_enemy_name_map(data)]
+    if entity == "item":
+        return [row.decoded_text for row in export_item_name_map(data)]
+    if entity == "npc":
+        return [row.speaker_name for row in export_npc_name_map(data)]
+    raise ValueError(f"Unsupported entity: {entity}")
+
+
+def _entity_name_max_length(entity: str) -> int | None:
+    """Return the current soft cap for a rename target, if any."""
+
+    return {
+        "character": 8,
+        "class": 12,
+        "enemy": 12,
+        "item": 12,
+        "npc": None,
+    }[entity]
+
+
+def _validate_entity_template_row(entity: str, current_name: str, replacement_name: str) -> None:
+    """Fail fast on obviously invalid entity template rows."""
+
+    max_length = _entity_name_max_length(entity)
+    if max_length is None:
+        # NPC names are line-length constrained instead of capped here.
+        replacement_name.encode("ascii")
+        if not replacement_name.strip():
+            raise ValueError("NPC names cannot be empty.")
+        return
+    replacement_bytes = replacement_name.encode("ascii")
+    if not replacement_bytes:
+        raise ValueError(f"{entity.capitalize()} names cannot be empty.")
+    if len(replacement_bytes) > max_length:
+        raise ValueError(f"{entity.capitalize()} names are currently limited to {max_length} ASCII characters.")
+
+
+def _entity_template_default_path(entity: str) -> Path:
+    """Return the default repository-relative output for an entity template export."""
+
+    return Path(f"ignore/temp/{entity}-names.template.csv")
+
+
+def run_export_entity_name_template(data: bytes, entity: str, output: Path) -> None:
+    """Export a two-column editable template for an entity-name workflow."""
+
+    rows = [EntityNameTemplateRow(current_name=name, replacement_name="") for name in _entity_name_rows(data, entity)]
+    output_path = output if output.is_absolute() else (REPO_ROOT / output)
+    write_entity_name_template_csv(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def run_patch_entity_name_template_file(
+    *,
+    entity: str,
+    data: bytes,
+    rom_path: Path,
+    input_path: Path,
+    output: Path | None,
+    overwrite: bool,
+    in_place: bool,
+    mode: str,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
+    """Patch multiple entity renames from a two-column template CSV."""
+
+    template_path = input_path if input_path.is_absolute() else (REPO_ROOT / input_path)
+    template_rows = load_entity_name_template_csv(template_path)
+    patchers = {
+        "character": run_patch_character_name,
+        "class": run_patch_class_name,
+        "enemy": run_patch_enemy_name,
+        "item": run_patch_item_name,
+        "npc": run_patch_npc_name,
+    }
+    patcher = patchers[entity]
+    final_output_path = resolve_patch_output_path(
+        source_path=rom_path,
+        output_path=(output if output is None else (output if output.is_absolute() else (REPO_ROOT / output))),
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+
+    work_dir = REPO_ROOT / "ignore" / "temp"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    work_file = NamedTemporaryFile(delete=False, suffix=".gba", dir=work_dir)
+    work_path = Path(work_file.name)
+    work_file.close()
+
+    current_data = bytes(data)
+    patched_rows = 0
+    skipped_rows: list[str] = []
+    total_rows = max(1, len(template_rows))
+    try:
+        for row_index, row in enumerate(template_rows):
+            _report_progress(
+                progress_callback,
+                0.02 + (0.96 * (row_index / total_rows)),
+                f"Patching {entity} template rows",
+            )
+            if not row.current_name:
+                continue
+            if not row.replacement_name:
+                continue
+            if row.current_name == row.replacement_name:
+                continue
+            try:
+                _validate_entity_template_row(entity, row.current_name, row.replacement_name)
+            except ValueError as exc:
+                skipped_rows.append(f"  current={row.current_name!r} reason={str(exc)}")
+                continue
+            try:
+                messages = patcher(
+                    data=current_data,
+                    rom_path=rom_path,
+                    current_name=row.current_name,
+                    replacement_name=row.replacement_name,
+                    mode=mode,
+                    output=work_path,
+                    overwrite=True,
+                    in_place=False,
+                    progress_callback=None,
+                )
+            except ValueError as exc:
+                skipped_rows.append(f"  current={row.current_name!r} reason={str(exc)}")
+                continue
+            current_data = work_path.read_bytes()
+            patched_rows += 1
+            if messages:
+                # Keep the command quiet; the batch summary is the useful part.
+                pass
+        final_output_path.parent.mkdir(parents=True, exist_ok=True)
+        final_output_path.write_bytes(current_data)
+    finally:
+        try:
+            work_path.unlink()
+        except OSError:
+            pass
+
+    messages = [
+        f"Template file: {template_path}",
+        f"Patched rows: {patched_rows}",
+        f"Skipped rows: {len(skipped_rows)}",
+    ]
+    if skipped_rows:
+        messages.append("Skipped rows:")
+        messages.extend(skipped_rows)
+    messages.append(f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}")
+    return messages
 
 
 def run_export_text_surface_map(
@@ -878,6 +1110,7 @@ def run_patch_character_name(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> list[str]:
     """Patch a character name everywhere we can confidently see it."""
+    _validate_entity_template_row("character", current_name, replacement_name)
     output_path = None
     if output is not None:
         output_path = output if output.is_absolute() else (REPO_ROOT / output)
@@ -923,6 +1156,7 @@ def run_patch_enemy_name(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> list[str]:
     """Patch an enemy-type name everywhere we can confidently see it."""
+    _validate_entity_template_row("enemy", current_name, replacement_name)
     output_path = None
     if output is not None:
         output_path = output if output.is_absolute() else (REPO_ROOT / output)
@@ -964,6 +1198,7 @@ def run_patch_item_name(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> list[str]:
     """Patch an item name everywhere we can confidently see it."""
+    _validate_entity_template_row("item", current_name, replacement_name)
     output_path = None
     if output is not None:
         output_path = output if output.is_absolute() else (REPO_ROOT / output)
@@ -1005,6 +1240,7 @@ def run_patch_npc_name(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> list[str]:
     """Patch a dialogue-speaker or NPC-style name across dialogue surfaces."""
+    _validate_entity_template_row("npc", current_name, replacement_name)
     output_path = None
     if output is not None:
         output_path = output if output.is_absolute() else (REPO_ROOT / output)
@@ -1046,6 +1282,7 @@ def run_patch_class_name(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> list[str]:
     """Patch a class name everywhere we can confidently see it."""
+    _validate_entity_template_row("class", current_name, replacement_name)
     output_path = None
     if output is not None:
         output_path = output if output.is_absolute() else (REPO_ROOT / output)
@@ -1596,10 +1833,23 @@ def main() -> int:
             if args.action == "export" and args.target == "map":
                 _run_entity_name_export(entity=args.command, data=data, args=args)
                 return 0
+            if args.action == "export" and args.target == "template":
+                _run_entity_name_template_export(entity=args.command, data=data, args=args)
+                return 0
             if args.action == "list" and args.target == "names":
                 return _run_entity_name_list(entity=args.command, data=data, args=args)
             if args.action == "patch" and args.target == "name":
                 post_messages.extend(_run_entity_name_patch(
+                    entity=args.command,
+                    data=data,
+                    rom_path=rom_path,
+                    args=args,
+                    progress_callback=progress_callback,
+                ))
+                post_messages.append(fresh_boot_notice())
+                return 0
+            if args.action == "patch" and args.target == "file":
+                post_messages.extend(_run_entity_name_patch_file(
                     entity=args.command,
                     data=data,
                     rom_path=rom_path,

@@ -9,7 +9,8 @@ plan to tackle next.
 - story dialogue and broader text manipulation
 - conservative character-attribute editing
 - a more API-like command structure for future game edits
-- enemy rename is in active testing while broad repoint behavior is still being verified
+- enemy rename is experimental, in active testing, and still needs a fix-and-test pass before the broad repoint path can be considered stable
+- spell editing and spell-attribute workflows once the current text and name systems are fully stable
 
 ## What Is Confirmed
 
@@ -50,6 +51,7 @@ plan to tackle next.
 - stop treating raw byte matches as proof of a real text pointer when broad template patching repoints to EOF
 - keep the current broad repoint path marked as unstable until we can prove it is safe for full-story rewrites
 - prefer a verified-pointer list or an explicit map over whole-ROM pointer scans when we revisit this
+- enemy rename remains in active testing until the reflow and repoint safety rules are fully proven
 
 ### 1. Character rename API polish
 
@@ -81,6 +83,13 @@ plan to tackle next.
 - add broader item and NPC editing if the command surface proves stable
 - add stat editing
 - add other attribute groups once their canonical sources are mapped
+
+### 6. Spell editing
+
+- map the canonical spell data sources and confirm which fields are safe to edit
+- add spell-name and spell-attribute editing once the surrounding text pipeline is stable
+- keep spell editing separate from item-name handling even though both currently share the same text bank
+- define a command surface that matches the rest of the tree-style API
 
 ## Verification Notes
 

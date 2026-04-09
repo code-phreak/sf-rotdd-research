@@ -60,6 +60,8 @@ Confirmed examples include:
 
 This is the enemy-name source, not a monster roster list. The confirmed slice currently runs through `Soul Eater` before the next text block begins, and the current export now covers 79 enemy-name rows.
 
+Enemy rename is still experimental. We can patch and browse the confirmed slice, but the broad repoint path still needs a safety rule and thorough verification before it should be treated as stable.
+
 ### Known dialogue windows
 
 The corpus review also points to a few reliable dialogue windows that are useful when checking speaker names and dialogue-driven rename coverage:
@@ -69,6 +71,8 @@ The corpus review also points to a few reliable dialogue windows that are useful
 - Merchant-related later dialogue: `0x001DC487` to `0x001DD0D5`
 
 The first two windows meet at the same boundary. The later merchant block looks related, but it may be a separate scene bank, so we keep all three windows documented for now.
+
+When a dialogue-like row is rewritten after a name change, the tool now reflows the surrounding screen breaks from the updated text so line and page breaks shift with the new name length instead of staying frozen at the original positions.
 
 ## Confirmed codec rules
 
@@ -160,6 +164,8 @@ The first successful validation pass used in-place editing of an item name and c
 - testing on a copy of the ROM
 
 The repository tooling now supports this same workflow directly through `patch-known-text`, `patch-text-at-offset`, and the entity rename commands. Entity rename commands default to the conservative path: longer replacements repoint by appending to the end of the copied ROM when possible, and only truly unpointable hits are skipped. `liberal` remains intentionally unsafe and may fall back to direct in-place writes when the conservative path would skip a reference. The broader pointer-rewrite path is still unstable and should be treated as an evolving mechanism until we finish verifying which references are safe to rewrite.
+
+The entity workflows also now have CSV template variants, so the same name-editing path can be driven from a file instead of one command at a time. Fixed-length entity renames reject oversized names before the broader scan starts, so you get an immediate error instead of waiting for a full pass.
 
 When a named-table replacement needs more room, the current tools append the new payload to the end of the copied ROM and repoint the relevant table entry there instead of guessing at internal free space. For bulk story rewrites, that repoint strategy is still considered unstable until we finish narrowing the rewrite targets to verified pointer references.
 That is a good fit for emulator testing and copied-ROM workflows, but if we eventually target physical hardware or a flashcart we should verify that the enlarged image is still accepted.

@@ -26,6 +26,13 @@ Confirmed early rows include:
 
 The same bank continues with the rest of the named characters.
 The rename commands default to the conservative path for these entity workflows. That keeps the EOF-repoint path as the normal behavior, while `liberal` remains an unsafe fallback for cases where a reference would otherwise be skipped. The broader bulk repoint path is still unstable until we verify which pointer hits are safe to rewrite.
+Each entity workflow also supports a bulk CSV template:
+
+- `character export template` / `character patch file`
+- `class export template` / `class patch file`
+- `enemy export template` / `enemy patch file`
+- `item export template` / `item patch file`
+- `npc export template` / `npc patch file`
 
 ### Why this matters
 

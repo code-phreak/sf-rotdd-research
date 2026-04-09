@@ -2,14 +2,13 @@
 
 This repository is a public knowledge base and tooling project for reverse engineering *Shining Force: Resurrection of the Dark Dragon* on Game Boy Advance.
 
-It is meant to be readable by humans first and useful to tools second. The goal is to preserve confirmed evidence, keep the code maintainable, and make each step reproducible.
 
 ## Quick Start
 
 1. Use Python to run the command-line tool from the repository root.
 2. Pass `--rom` with a ROM copy, or let the script prompt for a local ROM path.
 3. For arbitrary text replacement, start with `patch-text-at-offset`.
-4. For larger text edits, export a two-column template from `research/raw/text-surfaces.csv` and patch it back with `text-surface export template` and `text-surface patch file`. If you do not pass `--refs rewrite` or `--refs keep`, the tool will explain the choice the first time, ask once, and remember your preference locally unless you clear it. `unsorted` rows have been reliable so far when the replacement stays the same length or shorter; multi-line template rewriting is still experimental, and the current broad EOF repoint behavior is still considered unstable until the pointer rewrite rules are fully verified.
+4. For larger text edits, export a two-column template from `research/raw/text-surfaces.csv` and patch it back with `text-surface export template` and `text-surface patch file`. If you do not pass `--refs rewrite` or `--refs keep`, the tool will explain the choice the first time, ask once, and remember your preference locally unless you clear it. Dialogue-like patches now reflow screen breaks from the updated text so renamed names can shift the surrounding lines naturally. `unsorted` rows have been reliable so far when the replacement stays the same length or shorter; multi-line template rewriting is still experimental, and the current broad EOF repoint behavior is still considered unstable until the pointer rewrite rules are fully verified.
 
 Examples:
 
@@ -61,7 +60,7 @@ The main folders and files to know about are:
 
 ## Current Focus
 
-The current work is centered on story dialogue, broader text manipulation, and conservative character-attribute editing.
+The current work is centered on story dialogue, broader text manipulation, conservative character-attribute editing, and laying the groundwork for spell editing.
 
 Current confirmed leads:
 
@@ -79,7 +78,7 @@ Current confirmed leads:
 - class names can be renamed safely with `class patch name <current> <replacement>`
 - enemy names can be browsed with `enemy list names`
 - enemy names can be renamed safely with `enemy patch name <current> <replacement>`
-- enemy renames are still in active testing while we verify the broad repoint path
+- enemy renames are experimental and still in active testing while we verify the broad repoint path
 - item names can be browsed with `item list names`
 - item names can be renamed safely with `item patch name <current> <replacement>`
 - NPC-speaker names can be browsed with `npc list names`
@@ -93,15 +92,17 @@ Current confirmed leads:
 
 `class patch name <current> <replacement>` is the matching command for the confirmed class-name slice. It uses the same conservative rename rules, 12-character cap, and whole-name matching behavior, but it starts from the class slice instead of the playable-character pointer table.
 
-`enemy patch name <current> <replacement>` is the matching command for the confirmed enemy-name slice. It uses the same conservative rename rules, 12-character cap, and whole-name matching behavior, but it starts from the enemy slice instead of the playable-character pointer table. Enemy renames are still in active testing while we verify the broad repoint path.
+`enemy patch name <current> <replacement>` is the matching command for the confirmed enemy-name slice. It uses the same conservative rename rules, 12-character cap, and whole-name matching behavior, but it starts from the enemy slice instead of the playable-character pointer table. Enemy renames are experimental and still in active testing while we verify the broad repoint path.
 
 `item patch name <current> <replacement>` is the matching command for the confirmed item-name table. It uses the same conservative rename rules, 12-character cap, and whole-name matching behavior, but it starts from the item table.
 
 `npc patch name <current> <replacement>` is the matching command for dialogue-speaker prefixes extracted from the corpus. It uses the same conservative rename rules and whole-name matching behavior, but it starts from dialogue text instead of a pointer table.
 
+Each entity workflow also supports `export template` and `patch file` for bulk edits from a CSV template. The template file uses `current_name,replacement_name`, and the fixed-length entity commands reject oversized names before they start scanning for matches.
+
 All entity rename commands default to the conservative path. Longer replacements append to the end of the copied ROM and repoint the relevant table entry when possible. `liberal` is intentionally unsafe and may fall back to direct in-place writes when a reference would otherwise be skipped.
 
-`text-surface export template` filters `research/raw/text-surfaces.csv` down to a single type label and writes a two-column editable CSV to `ignore/temp/`. `text-surface patch file` compares that template against the current corpus, patches only the modified rows, and uses EOF repointing when a changed row needs more room. `unsorted` rows have been reliable so far when the replacement stays the same length or shorter, but multi-line template rewriting is still experimental and the bulk repoint path is still unstable until we finish verifying which pointer references are safe to rewrite.
+`text-surface export template` filters `research/raw/text-surfaces.csv` down to a single type label and writes a two-column editable CSV to `ignore/temp/`. `text-surface patch file` compares that template against the current corpus, patches only the modified rows, and uses EOF repointing when a changed row needs more room. Dialogue-like patches reflow screen breaks from the updated text so name changes can shift the surrounding lines naturally. `unsorted` rows have been reliable so far when the replacement stays the same length or shorter, but multi-line template rewriting is still experimental and the bulk repoint path is still unstable until we finish verifying which pointer references are safe to rewrite.
 
 `text-surface patch file` also supports a ref-file preference tag:
 

@@ -46,10 +46,13 @@ All entity rename commands default to the conservative path. Longer replacements
 ### Character Name API
 
 - `character export map` writes the canonical character-name pointer table to `research/raw/character-names.csv`.
+- `character export template` writes a bulk-edit template to `ignore/temp/character-names.template.csv`.
 - `character list names` lists the canonical character names from the pointer table.
 - `character patch name <current> <replacement>` performs a case-sensitive global rename across the canonical name table, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs such as short menu labels.
+- `character patch file` applies many character renames from a CSV template with `current_name,replacement_name` columns.
 - Playable character names are conservatively capped at 8 ASCII characters, which is enough for the repointed-safe path we have evidence for right now.
 - When a replacement needs more room, the tool appends the new payload to the end of the copied ROM and rewrites the relevant pointer(s). That can grow the ROM image, so hardware or flashcart validation should confirm the target accepts the larger file.
+- Oversized replacement names fail fast before the broader rename scan starts.
 - When a reference is skipped, the CLI prints every skipped row with a short one-line reason such as `too long for slot`, `no pointer table`, or `name collision`.
 
 Skipped-row reasons:
@@ -65,32 +68,40 @@ Skipped-row reasons:
 ### Class Name API
 
 - `class export map` writes the confirmed class-name slice to `research/raw/class-names.csv`.
+- `class export template` writes a bulk-edit template to `ignore/temp/class-names.template.csv`.
 - `class list names` lists the confirmed class names from the current slice.
 - `class patch name <current> <replacement>` performs the matching case-sensitive global rename across the confirmed class-name slice, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs.
+- `class patch file` applies many class renames from a CSV template with `current_name,replacement_name` columns.
 
 ### Enemy Name API
 
 - `enemy export map` writes the confirmed enemy-name slice to `research/raw/enemy-names.csv`.
+- `enemy export template` writes a bulk-edit template to `ignore/temp/enemy-names.template.csv`.
 - `enemy list names` lists the confirmed enemy names from the current table.
 - `enemy patch name <current> <replacement>` performs the matching case-sensitive global rename across the confirmed enemy-name slice, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs.
-- Enemy rename is in active testing, especially around bulk template patching and the broad EOF repoint path.
+- Enemy rename is experimental and in active testing, especially around bulk template patching and the broad EOF repoint path.
+- `enemy patch file` applies many enemy renames from a CSV template with `current_name,replacement_name` columns.
 
 ### Item Name API
 
 - `item export map` writes the confirmed item-name table to `research/raw/item-names.csv`.
+- `item export template` writes a bulk-edit template to `ignore/temp/item-names.template.csv`.
 - `item list names` lists the confirmed item names from the current table.
 - `item patch name <current> <replacement>` performs the matching case-sensitive global rename across the confirmed item-name table, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs.
 - Named-table selectors use normalized visible names, so trailing padding spaces in the exported rows do not block a rename target from being found.
+- `item patch file` applies many item renames from a CSV template with `current_name,replacement_name` columns.
 
 ### NPC Name API
 
 - `npc export map` writes dialogue-speaker prefixes to `research/raw/npc-names.csv`.
+- `npc export template` writes a bulk-edit template to `ignore/temp/npc-names.template.csv`.
 - The NPC CSV keeps the speaker name in the rightmost column and does not store `row_index`.
 - `npc list names` lists dialogue-speaker prefixes extracted from the corpus.
 - `npc patch name <current> <replacement>` performs the matching case-sensitive global rename across dialogue-speaker prefixes and matching text-surface rows.
 - NPC names are limited by dialogue line wrapping rather than the 8-character cap used for playable characters and the 12-character cap used for classes, enemies, and items.
 - NPC extraction always excludes the canonical playable roster from the checked-in character-name export, so renamed playable characters stay out of the NPC list.
 - The dialogue normalizer auto-wraps whole words and auto-inserts page breaks so pages cycle cleanly every three visible rows when the text needs more room.
+- `npc patch file` applies many NPC renames from a CSV template with `current_name,replacement_name` columns.
 
 ### Text Corpus Discovery
 
@@ -100,7 +111,9 @@ Skipped-row reasons:
 - `decoded_text` is always quoted in these exports so commas and inline tags stay easy to read, and generated templates quote `decoded_text` too.
 - `text-surface export template` filters `research/raw/text-surfaces.csv` down to a single type label and writes a two-column editable template to `ignore/temp/`.
 - `text-surface patch file` compares a two-column template against the current corpus, patches only the modified rows, and repoints changed text to EOF when a safe pointer target exists.
+- Dialogue-like patches reflow screen breaks from the updated text so renamed names can shift the surrounding lines naturally.
 - `unsorted` rows have been reliable so far when the replacement stays the same length or shorter, but multi-line template rewriting is still experimental and should be treated as a work-in-progress.
+- fixed-length entity renames now fail fast before their broader reference scans start, so oversized names do not make you wait for a full pass before the command errors.
 - the patch command uses `research/raw/text-surfaces.csv` as its default codec/source reference so the template file can stay compact
 - editable CSV text may use `…` as a shorthand for `...`; the tool normalizes it to the period bytes used by the ROM
 - `--refs rewrite` regenerates the corpus CSV after patching; `--refs keep` leaves it unchanged
@@ -114,6 +127,7 @@ Skipped-row reasons:
 - `class patch stat <stat> <target> <value>` is reserved for future class stat editing.
 - `enemy patch stat <stat> <target> <value>` is reserved for future enemy stat editing.
 - `item patch stat <stat> <target> <value>` is reserved for future item stat editing.
+- spell editing is planned next, with a future tree-style command surface that will sit beside the existing name and stat workflows.
 - These commands currently parse and then report that stat editing is not implemented yet.
 
 Examples:
@@ -148,6 +162,8 @@ python scripts/rom_text_tools.py --rom path/to/your-rom.gba class patch name Kni
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba enemy patch name Goblin Ogre --output path/to/test-rom.gba
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba item patch name Healing Seed Remedy --output path/to/test-rom.gba
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba npc patch name Priest Oracle --output path/to/test-rom.gba
+python scripts/rom_text_tools.py character export template --output ignore/temp/character-names.template.csv
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba character patch file --input ignore/temp/character-names.template.csv --output path/to/test-rom.gba
 python scripts/rom_text_tools.py text-surface export template --type unsorted
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba text-surface patch file --input ignore/temp/text-surfaces.unsorted.csv --corpus research/raw/text-surfaces.csv --output path/to/test-rom.gba
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba text-surface patch file --input ignore/temp/text-surfaces.unsorted.csv --corpus research/raw/text-surfaces.csv --refs rewrite --output path/to/test-rom.gba
@@ -274,7 +290,7 @@ This is the recommended first step before `patch-known-text`.
 
 ## Technical direction
 
-The tooling is being written as if it will eventually support a richer API and UI layer.
+The tooling will eventually support a richer API and UI layer.
 
 - generic code should stay reusable for other GBA ROM projects
 - ROTDD-specific facts should stay isolated and easy to audit
