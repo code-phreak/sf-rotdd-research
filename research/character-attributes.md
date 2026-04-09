@@ -25,20 +25,23 @@ Confirmed early rows include:
 - `Mawlock`
 
 The same bank continues with the rest of the named characters.
+The rename commands default to the conservative path for these entity workflows. That keeps the EOF-repoint path as the normal behavior, while `liberal` remains an unsafe fallback for cases where a reference would otherwise be skipped. The broader bulk repoint path is still unstable until we verify which pointer hits are safe to rewrite.
 
 ### Why this matters
 
 The table-driven layout means we can repoint an individual name without disturbing the surrounding names.
 
-For the canonical name table itself, the tool uses the observed zero padding immediately before the name bank as conservative free space for longer replacements. That is enough for the current Mae test case, but it is intentionally narrow until we map more of the surrounding ROM.
+For the canonical name table itself, longer replacements now append their payload to the end of the copied ROM instead of guessing at free space inside the original image. That keeps the source ROM untouched and avoids accidental overlap with unrelated data.
+Because the replacement payload is appended, the resulting ROM image can be larger than the source file; emulator verification is fine, but hardware or flashcart testing should confirm that the target accepts the larger image.
 
 The rename workflow now also searches the known ROTDD text tables, the broader text-surface corpus, and short whole-name ROTDD surface runs such as menu labels so visible dialogue and similar references stay aligned with the canonical name table.
-If a matched row cannot fit the longer replacement yet, the tool reports that row and leaves it for later repointing work instead of forcing a bad write.
-Repointed rows are allocated from safe free space above the ROM header, and each reserved span is tracked so one rename does not overwrite another.
+If a matched row cannot fit the longer replacement yet, the tool reports that row and repoints the payload into appended space instead of forcing a bad write. That is currently fine for the named-table workflows, but the same strategy is still under review for bulk story patching.
 The rename tools also reject a replacement that would collide with an existing live canonical name.
-Replacement names are currently limited by the dialogue-box line wrapping rules for NPCs, while the conservative repointing path for the other entity tables still uses a 12-character cap.
-Whole-name matching prevents substring rewrites, so a rename like `Max -> Jeff` will not touch `Maximum`.
-When you verify a rename visually, prefer a fresh boot or a freshly reloaded save over an old savestate so stale in-memory UI does not obscure a correct ROM patch.
+Playable character names are currently limited to 8 ASCII characters so menu spacing stays readable. The conservative repointing path for the other entity tables still uses a 12-character cap.
+Whole-name matching prevents substring rewrites and also handles simple singular/plural dialogue forms, so a rename like `Max -> Jeff` will not touch `Maximum` and `Goblin -> Big Loser` can also affect `goblins`.
+When you verify a rename visually, prefer a fresh boot or a freshly reloaded save so cached in-memory UI does not obscure a correct ROM patch.
+
+The dialogue normalizer can automatically page long dialogue rewrites, so a single replacement can span multiple 3-row pages without the caller manually inserting every page break.
 
 ### Current CSV
 
@@ -59,13 +62,13 @@ The class, enemy, and item CSVs use the same compact name-table columns, so the 
 
 ### Current tooling
 
-- `export-character-name-map` writes the canonical CSV export
-- `list-character-names` prints a browseable terminal view
-- `patch-character-name` renames one character everywhere we can confidently see the old name, including short menu labels and other whole-name ROTDD runs
+- `character export map` writes the canonical CSV export
+- `character list names` prints a browseable terminal view
+- `character patch name <current> <replacement>` renames one character everywhere we can confidently see the old name, including short menu labels and other whole-name ROTDD runs.
 
 ### Example
 
-To change Mae to Jade, the current workflow repoints Mae into the observed zero padding before the name bank, updates the pointer-table entry that references her name, and rewrites every matched text reference it can confidently see.
+To change Mae to Jade, the current workflow appends the replacement into space at the end of the copied ROM, updates the pointer-table entry that references her name, and rewrites every matched text reference it can confidently see.
 
 That keeps the edit small, visible, and easy to verify in both the CSV and the ROM, while also keeping the visible dialogue, menu labels, and related text in sync.
 
@@ -79,10 +82,9 @@ The currently confirmed class-name source is the first slice of the partial ROTD
 
 That slice is exposed through the same conservative rename workflow as the playable roster:
 
-- `export-class-name-map`
-- `list-class-names`
-- `patch-class-name`
-- `class <name> rename <replacement>`
+- `class export map`
+- `class list names`
+- `class patch name <current> <replacement>`
 
 ## Enemy Names
 
@@ -92,31 +94,30 @@ The current confirmed slice runs through `Soul Eater`, so the enemy-name export 
 
 That slice is exposed through the same conservative rename workflow as the playable roster:
 
-- `export-enemy-name-map`
-- `list-enemy-names`
-- `patch-enemy-name`
-- `enemy <name> rename <replacement>`
+- `enemy export map`
+- `enemy list names`
+- `enemy patch name <current> <replacement>`
 
-The same 12 ASCII character cap applies to both slices for now, and whole-name matching still prevents substring rewrites such as `Max` inside `Maximum`.
+The same 12 ASCII character cap applies to both slices for now, and whole-name matching still prevents substring rewrites such as `Max` inside `Maximum` while also handling simple plural mentions.
 
 ## Item Names
 
-The confirmed item-name source is the item-name table already present in the structured text map.
+The confirmed item-name source is the item-name table already present in the split raw name exports.
 
 That table is exposed through the same conservative rename workflow:
 
-- `export-item-name-map`
-- `list-item-names`
-- `patch-item-name`
-- `item <name> rename <replacement>`
+- `item export map`
+- `item list names`
+- `item patch name <current> <replacement>`
 
-The same 12 ASCII character cap applies here too, and whole-name matching still prevents substring rewrites.
+The same 12 ASCII character cap applies here too, and whole-name matching still prevents substring rewrites while also handling simple plural mentions.
 
 ## NPC Names
 
 Dialogue-speaker prefixes are extracted from the dialogue corpus and tracked as an NPC-style name map.
 
 NPC extraction is intentionally last in the precedence chain. If a dialogue speaker name already belongs to the playable roster, an enemy, a class, or an item, it is not treated as an NPC. That keeps names like `Ken`, `Mage`, `Dark Mage`, and `Medical Herb` out of the NPC list.
+The NPC extractor also uses the canonical checked-in playable roster as a stable exclusion list, so a renamed test ROM does not accidentally reclassify a playable character like `Tao` as an NPC.
 
 The NPC extractor also normalizes whitespace and case before comparison, so padded labels from the ROM do not create duplicate entries. It also skips obvious system-style labels and description-style item text such as `Victory Conditions`, `Clear Bonus`, or `Medical Herb`.
 
@@ -126,11 +127,10 @@ The NPC raw CSV keeps the NPC name in the rightmost column and does not store th
 
 This is the best current starting point for visible NPC labels:
 
-- `export-npc-name-map`
-- `list-npc-names`
-- `patch-npc-name`
-- `npc <name> rename <replacement>`
+- `npc export map`
+- `npc list names`
+- `npc patch name <current> <replacement>`
 
-The same conservative rename rules apply, and the corpus-based extraction keeps the workflow aligned with the actual dialogue text rather than guessing at a separate NPC table. NPC replacements are not capped at 12 characters the way character, class, enemy, and item names are; instead, they are limited by the dialogue-box line wrapping rules and whatever repointing the patcher can safely perform.
+The same conservative rename rules apply, and the corpus-based extraction keeps the workflow aligned with the actual dialogue text rather than guessing at a separate NPC table. NPC replacements are not capped at 12 characters the way character, class, enemy, and item names are; instead, they are limited by the dialogue-box line wrapping rules and appended repointing when the text grows too long for its original slot.
 
 This is the right place to note future evidence about class names, enemy names, NPC names, item names, and other visible labels that do not belong in the playable-character section above.

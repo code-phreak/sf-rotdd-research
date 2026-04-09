@@ -60,6 +60,16 @@ Confirmed examples include:
 
 This is the enemy-name source, not a monster roster list. The confirmed slice currently runs through `Soul Eater` before the next text block begins, and the current export now covers 79 enemy-name rows.
 
+### Known dialogue windows
+
+The corpus review also points to a few reliable dialogue windows that are useful when checking speaker names and dialogue-driven rename coverage:
+
+- Priest general dialogue: `0x001D276F` to `0x001D2E72`
+- Merchant general dialogue: `0x001D2E72` to `0x001D3536`
+- Merchant-related later dialogue: `0x001DC487` to `0x001DD0D5`
+
+The first two windows meet at the same boundary. The later merchant block looks related, but it may be a separate scene bank, so we keep all three windows documented for now.
+
 ## Confirmed codec rules
 
 The currently confirmed parts of the ROTDD text codec are enough to decode and patch many menu strings safely.
@@ -68,13 +78,17 @@ The currently confirmed parts of the ROTDD text codec are enough to decode and p
 - `0x10` is a space
 - uppercase letters decode as `byte + 0x16`
 - lowercase letters decode as `byte + 0x19`
-- visible digits also use one-byte glyphs in the surface codec:
+- visible digits also use one-byte glyphs in the surface codec; our current best mapping treats them as a contiguous run:
   - `0x11` is `0`
   - `0x12` is `1`
   - `0x13` is `2`
   - `0x14` is `3`
   - `0x15` is `4`
   - `0x16` is `5`
+  - `0x17` is `6`
+  - `0x18` is `7`
+  - `0x19` is `8`
+  - `0x1A` is `9`
 - `0x23` is a period
 - `0x25` is a colon
 - `0x29` is a question mark
@@ -145,11 +159,16 @@ The first successful validation pass used in-place editing of an item name and c
 - replacement that stays within the original byte budget
 - testing on a copy of the ROM
 
-The repository tooling now supports this same conservative workflow directly through `patch-known-text`, `patch-character-name`, `patch-class-name`, `patch-enemy-name`, `patch-item-name`, `patch-npc-name`, `patch-text-at-offset`, and the `character <name> rename <replacement>` / `class <name> rename <replacement>` / `enemy <name> rename <replacement>` / `item <name> rename <replacement>` / `npc <name> rename <replacement>` command shapes, but it still keeps replacements within the original byte budget unless you deliberately opt into `--in-place`.
+The repository tooling now supports this same workflow directly through `patch-known-text`, `patch-text-at-offset`, and the entity rename commands. Entity rename commands default to the conservative path: longer replacements repoint by appending to the end of the copied ROM when possible, and only truly unpointable hits are skipped. `liberal` remains intentionally unsafe and may fall back to direct in-place writes when the conservative path would skip a reference. The broader pointer-rewrite path is still unstable and should be treated as an evolving mechanism until we finish verifying which references are safe to rewrite.
+
+When a named-table replacement needs more room, the current tools append the new payload to the end of the copied ROM and repoint the relevant table entry there instead of guessing at internal free space. For bulk story rewrites, that repoint strategy is still considered unstable until we finish narrowing the rewrite targets to verified pointer references.
+That is a good fit for emulator testing and copied-ROM workflows, but if we eventually target physical hardware or a flashcart we should verify that the enlarged image is still accepted.
+
+The dialogue normalizer also auto-inserts `<PAGE_BREAK>` between groups of three visible rows when a replacement needs more room on screen. That keeps long dialogue rewrites readable without asking the caller to manually manage page breaks.
 
 ### What is not safe yet
 
-- longer replacement without repointing
+- longer replacement without a repointed destination
 - changing table structure without understanding the consuming code
 - assuming every visible string uses the same bank or same lookup path
 
@@ -164,9 +183,9 @@ This is the current best practice for validating a text edit.
 5. Save a test ROM copy.
 6. Verify the result in mGBA.
 
-This workflow already worked for an inventory item name and is a reliable first pass before deeper repointing work.
+This workflow already worked for an inventory item name and is a reliable first pass before broader automatic repointing work.
 
-The script currently only supports replacement text that fits the known ROTDD letter-and-space codec and the current dialogue-box budget.
+The script currently only supports replacement text that fits the known ROTDD letter-and-space codec and the current dialogue-box budget when it is doing literal in-place patching.
 
 ## Suggested breakpoint strategy
 

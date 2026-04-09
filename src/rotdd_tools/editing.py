@@ -1,14 +1,16 @@
 """
 Safe edit helpers for known ROTDD text tables.
 
-The current editor is intentionally conservative. It keeps replacements within
-the original byte budget for already mapped tables and always writes to a
-copied ROM unless the caller explicitly opts into unsafe in-place writes.
+The default editor path is intentionally conservative. It keeps replacements
+within the original byte budget when possible, repoints longer values by
+appending them to the end of a copied ROM, and only uses unsafe in-place
+writes when the caller explicitly asks for liberal mode or direct overwrites.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from .catalog import (
@@ -21,15 +23,21 @@ from .catalog import (
     export_npc_name_map,
     export_known_text_map,
     export_text_surface_corpus,
+    read_text_surface_csv,
+    load_text_surface_template_csv,
     normalize_visible_name,
     iter_rotdd_surface_runs,
+    write_text_surface_csv,
 )
-from .models import CharacterNameReferenceRow, CharacterNameRow, NpcNameRow, TextMapRow
+from .models import (
+    CharacterNameReferenceRow,
+    CharacterNameRow,
+    NpcNameRow,
+    TextMapRow,
+)
 from .gba import GBA_ROM_BASE, iter_find_all, printable_ascii, read_terminated_string
 from .rotdd import (
     KNOWN_TEXT_TABLES,
-    ROTDD_CHARACTER_NAME_REPOINT_END,
-    ROTDD_CHARACTER_NAME_REPOINT_START,
     ROTDD_CHARACTER_NAME_MAX_LENGTH,
     ROTDD_CLASS_NAME_MAX_LENGTH,
     ROTDD_CLASS_NAME_TABLE_SLUG,
@@ -52,6 +60,41 @@ def get_known_table(table_slug: str):
         if table.slug == table_slug:
             return table
     raise ValueError(f"Unknown table slug: {table_slug}")
+
+
+def _report_progress(
+    progress_callback: Callable[[float, str], None] | None,
+    percent: float,
+    message: str,
+) -> None:
+    """Forward a normalized progress update when the caller asked for one."""
+
+    if progress_callback is None:
+        return
+    progress_callback(max(0.0, min(1.0, percent)), message)
+
+
+def _short_skip_reason(exc: ValueError) -> str:
+    """Convert a detailed ValueError into a short one-line skip reason."""
+
+    message = str(exc).lower()
+    if "no pointer table was found" in message or "no pointer table" in message:
+        return "no pointer table"
+    if "unsupported character" in message:
+        return "unsupported glyph"
+    if "unsupported inline tag" in message:
+        return "unsupported tag"
+    if "unsupported patch codec" in message or "codec" in message:
+        return "unsupported codec"
+    if "already in use" in message or "collision" in message:
+        return "name collision"
+    if "too long" in message or "length" in message:
+        return "too long for slot"
+    if "plain ascii" in message:
+        return "ASCII only"
+    if "cannot be empty" in message:
+        return "empty replacement"
+    return "unsafe skip"
 
 
 def select_known_text_row(
@@ -152,9 +195,42 @@ def _visible_width(text: str) -> int:
 
 
 def replace_case_sensitive_name(text: str, current_name: str, replacement_name: str) -> tuple[str, bool]:
-    """Replace a whole-name occurrence without touching longer words."""
-    pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
-    updated, count = pattern.subn(replacement_name, text)
+    """Replace a whole visible name, including its simple plural form."""
+
+    def pluralize(name: str) -> str:
+        parts = name.split()
+        if not parts:
+            return name
+        last = parts[-1]
+        if re.search(r"(s|x|z|ch|sh)$", last, re.IGNORECASE):
+            plural_last = last + "es"
+        elif re.search(r"[^aeiou]y$", last, re.IGNORECASE):
+            plural_last = last[:-1] + "ies"
+        else:
+            plural_last = last + "s"
+        return " ".join(parts[:-1] + [plural_last])
+
+    try:
+        current_name.encode("ascii")
+        replacement_name.encode("ascii")
+    except UnicodeEncodeError:
+        return text, False
+
+    singular = re.escape(current_name)
+    plural_name = pluralize(current_name)
+    plural = re.escape(plural_name)
+    if plural == singular:
+        pattern = re.compile(rf"(?<![A-Za-z]){singular}(?![A-Za-z])", re.IGNORECASE)
+    else:
+        pattern = re.compile(rf"(?<![A-Za-z])(?:{singular}|{plural})(?![A-Za-z])", re.IGNORECASE)
+
+    def repl(match: re.Match[str]) -> str:
+        matched = match.group(0)
+        if matched.casefold() == plural_name.casefold():
+            return pluralize(replacement_name)
+        return replacement_name
+
+    updated, count = pattern.subn(repl, text)
     return updated, count > 0
 
 
@@ -194,89 +270,6 @@ def _strip_unmapped_placeholders(text: str) -> tuple[str, int]:
 
     stripped = re.sub(r" {2,}", " ", stripped)
     return stripped, removed
-
-
-def _nudge_trailing_short_token(page_text: str) -> str:
-    """
-    Move a short trailing punctuation token onto its own line when it would
-    otherwise be orphaned at the end of a wide line.
-
-    This also catches short punctuation-plus-quote tails such as `ME?!<QUOTE>`
-    so quote runs stay attached to the word they belong to.
-    """
-
-    lines = page_text.split("<NEWLINE>")
-    last_line = lines[-1].rstrip()
-    if not last_line:
-        return page_text
-
-    visible = _visible_width(last_line)
-    if visible < 24:
-        return page_text
-
-    match = re.match(r"^(.*\S)\s+(\S+)$", last_line)
-    if not match:
-        return page_text
-
-    prefix, token = match.groups()
-    token_visible = _visible_width(token)
-    if token_visible > 8:
-        return page_text
-    if token.isalpha():
-        return page_text
-    if not any(char in token for char in "?!.,:;'\"") and "<QUOTE>" not in token:
-        return page_text
-    if not prefix.strip():
-        return page_text
-
-    lines[-1] = _pad_visible_line(prefix)
-    lines.append(_pad_visible_line(token))
-    if len(lines) > ROTDD_DIALOGUE_VISIBLE_ROWS:
-        return page_text
-    return "<NEWLINE>".join(lines)
-
-
-def _nudge_trailing_quote_cluster(page_text: str) -> str:
-    """
-    Move a short word plus trailing quote run onto its own line when the
-    current line is already near the visible limit.
-    """
-
-    lines = page_text.split("<NEWLINE>")
-    last_line = lines[-1].rstrip()
-    if "<QUOTE>" not in last_line:
-        return page_text
-
-    parts = last_line.split()
-    if len(parts) < 2:
-        return page_text
-
-    quote_count = 0
-    index = len(parts) - 1
-    while index >= 0 and parts[index] == "<QUOTE>":
-        quote_count += 1
-        index -= 1
-
-    if quote_count == 0 or index < 0:
-        return page_text
-
-    tail_word = parts[index]
-    tail_visible = _visible_width(tail_word)
-    if tail_visible > 8:
-        return page_text
-    if not any(char in tail_word for char in "?!.,:;'\""):
-        return page_text
-
-    prefix = " ".join(parts[:index]).rstrip()
-    if not prefix.strip():
-        return page_text
-
-    tail = " ".join(parts[index:]).rstrip()
-    lines[-1] = _pad_visible_line(prefix)
-    lines.append(_pad_visible_line(tail))
-    if len(lines) > ROTDD_DIALOGUE_VISIBLE_ROWS:
-        return page_text
-    return "<NEWLINE>".join(lines)
 
 
 def fit_surface_text_to_length(
@@ -338,35 +331,48 @@ def normalize_surface_replacement_text(text: str) -> tuple[str, bool]:
     """
     Insert inline line breaks for dialogue-like text.
 
-    The result keeps explicit tags intact, wraps on word boundaries, and limits
-    the output to the three visible rows the box can show on each page.
+    The result keeps explicit tags intact, wraps on word boundaries, and
+    automatically inserts page breaks so the output stays within the three
+    visible rows the box can show on each page.
     """
 
-    tagged_text = re.sub(r"(<[^>]+>)", r" \1 ", text)
-    tokens = re.findall(r"<[^>]+>|\S+|\s+", tagged_text)
+    text = text.replace("…", "...")
+    tokens = re.findall(r"<[^>]+>|\s+|[^\s<>]+", text)
     parts: list[str] = []
     current: list[str] = []
     current_width = 0
     page_rows = 0
     auto_wrapped = False
 
+    def has_more_content(next_index: int) -> bool:
+        for token in tokens[next_index:]:
+            if not token.isspace():
+                return True
+        return False
+
+    def emit_page_break_if_needed(next_index: int) -> bool:
+        nonlocal page_rows
+        if page_rows < ROTDD_DIALOGUE_VISIBLE_ROWS:
+            return False
+        if current:
+            return False
+        if not has_more_content(next_index):
+            return False
+        parts.append("<PAGE_BREAK>")
+        page_rows = 0
+        return True
+
     def flush_line() -> None:
         nonlocal current, current_width, page_rows
         if not current:
             return
         line = "".join(current).rstrip()
-        visible = _visible_width(line)
-        page_rows += 1
-        if page_rows > ROTDD_DIALOGUE_VISIBLE_ROWS:
-            raise ValueError(
-                f"Replacement would expand a page to {page_rows} visible line(s); "
-                f"the dialogue box only has {ROTDD_DIALOGUE_VISIBLE_ROWS} rows per page."
-            )
         parts.append(line)
+        page_rows += 1
         current = []
         current_width = 0
 
-    for token in tokens:
+    for index, token in enumerate(tokens):
         if token.isspace():
             if current and current[-1] != " ":
                 current.append(" ")
@@ -388,6 +394,11 @@ def normalize_surface_replacement_text(text: str) -> tuple[str, bool]:
             current.append(token)
             continue
 
+        if re.fullmatch(r"[.,!?;:'\"-]+", token):
+            current.append(token)
+            current_width += len(token)
+            continue
+
         word_width = len(token)
         if word_width > ROTDD_DIALOGUE_LINE_WIDTH:
             raise ValueError(
@@ -397,30 +408,27 @@ def normalize_surface_replacement_text(text: str) -> tuple[str, bool]:
         next_width = current_width + (1 if current and current[-1] != " " else 0) + word_width
         if current and next_width > ROTDD_DIALOGUE_LINE_WIDTH:
             flush_line()
-            parts.append("<NEWLINE>")
-            auto_wrapped = True
+            page_break_emitted = False
+            if page_rows >= ROTDD_DIALOGUE_VISIBLE_ROWS:
+                page_break_emitted = emit_page_break_if_needed(index)
+                auto_wrapped = True
+            if not current and page_rows < ROTDD_DIALOGUE_VISIBLE_ROWS and not page_break_emitted:
+                parts.append("<NEWLINE>")
+                auto_wrapped = True
         if current and current[-1] != " ":
             current.append(" ")
             current_width += 1
         current.append(token)
         current_width += word_width
 
+        emit_page_break_if_needed(index + 1)
+
     flush_line()
+    emit_page_break_if_needed(len(tokens))
     normalized = "".join(parts)
     if auto_wrapped:
         normalized = re.sub(r"(<NEWLINE>|<PAGE_BREAK>|<SPEAKER_BREAK>)\s+", r"\1", normalized)
-
-    segments = re.split(r"(<PAGE_BREAK>|<SPEAKER_BREAK>)", normalized)
-    rebuilt: list[str] = []
-    for segment in segments:
-        if segment in {"<PAGE_BREAK>", "<SPEAKER_BREAK>"}:
-            rebuilt.append(segment)
-            continue
-        if not segment:
-            continue
-        segment = _nudge_trailing_quote_cluster(segment)
-        rebuilt.append(_nudge_trailing_short_token(segment))
-    normalized = "".join(rebuilt)
+    normalized = re.sub(r"(?<!\.)\s+\.(?!\.)", ".", normalized)
     return normalized, auto_wrapped
 
 
@@ -435,15 +443,19 @@ def patch_known_text(
     output_path: Path | None,
     overwrite: bool,
     in_place: bool,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[TextMapRow, bytes, Path]:
     """
-    Patch a known text entry while keeping the encoded bytes within the
-    original byte budget.
+    Patch a known text entry while keeping the replacement readable and
+    conservative.
 
-    This function only patches the encoded bytes for the selected text entry.
-    The existing terminator byte remains untouched.
+    Shorter replacements stay within the original byte budget. When a row
+    still needs more room and we can prove a safe pointer target, the payload
+    is appended to EOF and the table entry is repointed there instead of
+    guessing at internal free space.
     """
 
+    _report_progress(progress_callback, 0.0, "Selecting known text row")
     get_known_table(table_slug)
     rows = export_known_text_map(data)
     row = select_known_text_row(rows, table_slug, local_index, match_text, occurrence)
@@ -451,15 +463,30 @@ def patch_known_text(
     if row.codec != "rotdd":
         raise ValueError(f"Unsupported patch codec for table '{table_slug}': {row.codec}")
 
-    _normalized_text, replacement_bytes, auto_wrapped, dropped_unknowns = fit_surface_text_to_length(
-        replacement_text,
-        row.text_length,
-    )
-
+    _report_progress(progress_callback, 0.35, "Encoding replacement text")
     mutable = bytearray(data)
     start = row.text_rom_offset
     end = start + row.text_length
-    mutable[start:end] = replacement_bytes
+    try:
+        _normalized_text, replacement_bytes, auto_wrapped, dropped_unknowns = fit_surface_text_to_length(
+            replacement_text,
+            row.text_length,
+        )
+        mutable[start:end] = replacement_bytes
+    except ValueError:
+        _normalized_text, auto_wrapped = normalize_surface_replacement_text(replacement_text)
+        replacement_bytes = encode_rotdd_surface_text(_normalized_text)
+        pointer_hits = _find_pointer_hits(data, row.text_rom_offset)
+        if pointer_hits:
+            payload = replacement_bytes + bytes([ROTDD_TERMINATOR])
+            target_rom_offset = _append_repoint_payload(mutable, payload)
+            _rewrite_pointer_hits(mutable, pointer_hits, target_rom_offset)
+            replacement_bytes = payload
+            dropped_unknowns = 0
+        else:
+            raise ValueError(
+                "Replacement is too long for this known text row and no pointer table was found."
+            )
 
     final_output_path = resolve_patch_output_path(
         source_path=source_path,
@@ -469,11 +496,7 @@ def patch_known_text(
     )
     final_output_path.parent.mkdir(parents=True, exist_ok=True)
     final_output_path.write_bytes(mutable)
-    if auto_wrapped:
-        print(
-            f"Auto-wrapped replacement text to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of "
-            f"{ROTDD_DIALOGUE_LINE_WIDTH} characters. Please review the result on screen."
-        )
+    _report_progress(progress_callback, 1.0, "Patch complete")
     if dropped_unknowns:
         print(
             f"Dropped {dropped_unknowns} unmapped placeholder byte(s) to keep the replacement within the original budget."
@@ -489,24 +512,42 @@ def patch_text_at_offset(
     output_path: Path | None,
     overwrite: bool,
     in_place: bool,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[str, bytes, Path]:
     """
     Patch a ROTDD text run at a literal ROM offset while staying within the
-    original byte budget.
+    original byte budget when possible.
 
     The replacement text may include the known inline tags used by the corpus
-    exporter, so the CSV can be reused as a source of truth.
+    exporter, so the CSV can be reused as a source of truth. If the run has a
+    safe pointer target and the replacement no longer fits in place, the tool
+    appends the payload to EOF and repoints those pointers instead of guessing
+    at free space.
     """
 
+    _report_progress(progress_callback, 0.0, "Reading text run")
     original_bytes = read_terminated_string(data, rom_offset, terminator=ROTDD_TERMINATOR)
-    normalized_text, replacement_bytes, auto_wrapped, dropped_unknowns = fit_surface_text_to_length(
-        replacement_text,
-        len(original_bytes),
-    )
-
+    _report_progress(progress_callback, 0.3, "Encoding replacement text")
     mutable = bytearray(data)
     end = rom_offset + len(original_bytes)
-    mutable[rom_offset:end] = replacement_bytes
+    try:
+        normalized_text, replacement_bytes, auto_wrapped, dropped_unknowns = fit_surface_text_to_length(
+            replacement_text,
+            len(original_bytes),
+        )
+        mutable[rom_offset:end] = replacement_bytes
+    except ValueError:
+        normalized_text, auto_wrapped = normalize_surface_replacement_text(replacement_text)
+        replacement_bytes = encode_rotdd_surface_text(normalized_text)
+        pointer_hits = _find_pointer_hits(data, rom_offset)
+        if pointer_hits:
+            payload = replacement_bytes + bytes([ROTDD_TERMINATOR])
+            target_rom_offset = _append_repoint_payload(mutable, payload)
+            _rewrite_pointer_hits(mutable, pointer_hits, target_rom_offset)
+            replacement_bytes = payload
+            dropped_unknowns = 0
+        else:
+            raise ValueError("Replacement is too long for this ROTDD run and no pointer table was found.")
 
     final_output_path = resolve_patch_output_path(
         source_path=source_path,
@@ -516,16 +557,108 @@ def patch_text_at_offset(
     )
     final_output_path.parent.mkdir(parents=True, exist_ok=True)
     final_output_path.write_bytes(mutable)
-    if auto_wrapped:
-        print(
-            f"Auto-wrapped replacement text to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of "
-            f"{ROTDD_DIALOGUE_LINE_WIDTH} characters. Please review the result on screen."
-        )
+    _report_progress(progress_callback, 1.0, "Patch complete")
     if dropped_unknowns:
         print(
             f"Dropped {dropped_unknowns} unmapped placeholder byte(s) to keep the replacement within the original budget."
         )
     return decode_rotdd_bytes(original_bytes), replacement_bytes, final_output_path
+
+
+def patch_text_surface_template_file(
+    data: bytes,
+    source_path: Path,
+    template_path: Path,
+    corpus_path: Path,
+    output_path: Path | None,
+    overwrite: bool,
+    in_place: bool,
+    mode: str = "strict",
+    rewrite_reference_corpus: bool = False,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> tuple[int, int, list[str], list[str], Path]:
+    """
+    Patch every changed row in a two-column text-surface template CSV.
+
+    The template is compared against the live ROM text at each offset. Unchanged
+    rows are ignored. ROTDD rows keep the usual auto-wrap and page-break logic,
+    and longer rows are repointed to EOF when a safe pointer target exists.
+    """
+
+    template_rows = load_text_surface_template_csv(template_path)
+    corpus_rows = read_text_surface_csv(corpus_path)
+    corpus_codec_by_offset = {row.rom_offset: row.source_kind for row in corpus_rows}
+    mutable = bytearray(data)
+    changed_rows = 0
+    patched_rows = 0
+    skipped_rows: list[str] = []
+    deferred_messages: list[str] = []
+    allow_unsafe_write = mode == "liberal"
+    total_rows = max(1, len(template_rows))
+    _report_progress(progress_callback, 0.0, f"Reading template {template_path.name}")
+
+    for row_index, row in enumerate(template_rows):
+        _report_progress(
+            progress_callback,
+            0.02 + (0.78 * (row_index / total_rows)),
+            "Scanning template rows",
+        )
+        codec_kind = corpus_codec_by_offset.get(row.rom_offset)
+        if codec_kind == "ascii":
+            codec = "ascii"
+            current_text = read_terminated_string(data, row.rom_offset, terminator=0x00).decode("ascii", errors="replace")
+        elif codec_kind == "rotdd":
+            codec = "rotdd"
+            current_text = decode_rotdd_bytes(read_terminated_string(data, row.rom_offset, terminator=ROTDD_TERMINATOR))
+        else:
+            codec, current_text, _original_length = _infer_surface_codec(data, row.rom_offset)
+        if current_text == row.decoded_text:
+            continue
+
+        changed_rows += 1
+        try:
+            if codec == "ascii":
+                changed, target_rom_offset, _payload_length = _patch_ascii_surface_text(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=row.rom_offset,
+                    replacement_text=row.decoded_text,
+                    allow_unsafe_write=allow_unsafe_write,
+                )
+                auto_wrapped = False
+            else:
+                changed, target_rom_offset, _payload_length, auto_wrapped = _patch_rotdd_surface_text(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=row.rom_offset,
+                    replacement_text=row.decoded_text,
+                    allow_unsafe_write=allow_unsafe_write,
+                )
+        except ValueError as exc:
+            skipped_rows.append(
+                f"  rom=0x{row.rom_offset:08X} reason={_short_skip_reason(exc)}"
+            )
+            continue
+
+        if not changed:
+            continue
+
+        patched_rows += 1
+
+    final_output_path = resolve_patch_output_path(
+        source_path=source_path,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+    final_output_path.parent.mkdir(parents=True, exist_ok=True)
+    final_output_path.write_bytes(mutable)
+    if rewrite_reference_corpus:
+        corpus_rows = export_text_surface_corpus(bytes(mutable), progress_callback=None)
+        write_text_surface_csv(corpus_rows, corpus_path)
+        deferred_messages.append(f"Rewrote reference corpus: {corpus_path}")
+    _report_progress(progress_callback, 1.0, "Patch complete")
+    return changed_rows, patched_rows, skipped_rows, deferred_messages, final_output_path
 
 
 def select_character_name_row(
@@ -534,7 +667,8 @@ def select_character_name_row(
 ) -> CharacterNameRow:
     """Select one character-name row by its decoded ASCII name."""
 
-    matches = [row for row in rows if row.decoded_name == name]
+    normalized_name = normalize_visible_name(name)
+    matches = [row for row in rows if normalize_visible_name(row.decoded_name) == normalized_name]
     if not matches:
         raise ValueError(f"No character-name row found with decoded name {name!r}.")
     if len(matches) > 1:
@@ -549,7 +683,8 @@ def select_character_name_row(
 def select_npc_name_row(rows: list[NpcNameRow], name: str) -> NpcNameRow:
     """Select one NPC/speaker name row by its decoded speaker label."""
 
-    matches = [row for row in rows if row.speaker_name == name]
+    normalized_name = normalize_visible_name(name)
+    matches = [row for row in rows if normalize_visible_name(row.speaker_name) == normalized_name]
     if not matches:
         raise ValueError(f"No NPC-name row found with decoded name {name!r}.")
     if len(matches) > 1:
@@ -596,46 +731,113 @@ def _ensure_replacement_name_is_unique(
         )
 
 
-def _find_zero_run(data: bytes, start: int, end: int, length: int) -> int:
-    """Find a zero-filled region that can hold a repointed name."""
+def _append_repoint_payload(mutable: bytearray, payload: bytes) -> int:
+    """Append a replacement payload to the end of the ROM copy and return its offset."""
 
-    needle = bytes([0x00]) * length
-    index = data.find(needle, start, end)
-    if index == -1:
-        raise ValueError(
-            "No free space was found for the longer character name. "
-            "The current repointing rule only uses the observed padding before the name bank."
-    )
-    return index
+    target_rom_offset = len(mutable)
+    mutable.extend(payload)
+    return target_rom_offset
 
 
-def _find_global_zero_run(
+def _force_ascii_in_place_payload(replacement_name: str, original_length: int) -> bytes:
+    """Build a best-effort ASCII payload when the conservative rewrite path is unavailable."""
+
+    payload = replacement_name.encode("ascii") + bytes([0x00])
+    target_length = original_length + 1
+    if len(payload) >= target_length:
+        return payload[: target_length - 1] + bytes([0x00])
+    return payload + bytes([0x00]) * (target_length - len(payload))
+
+
+def _force_rotdd_in_place_payload(normalized_text: str, original_length: int) -> bytes:
+    """Build a best-effort ROTDD payload when the conservative rewrite path is unavailable."""
+
+    encoded = encode_rotdd_surface_text(normalized_text)
+    if len(encoded) >= original_length:
+        return encoded[:original_length]
+    return pad_rotdd_bytes(encoded, original_length)
+
+
+def _infer_surface_codec(data: bytes, rom_offset: int) -> tuple[str, str, int]:
+    """Infer whether a surface run is plain ASCII or ROTDD-encoded text."""
+
+    raw = read_terminated_string(data, rom_offset, terminator=0x00)
+    if raw and all(printable_ascii(byte) for byte in raw):
+        return "ascii", raw.decode("ascii"), len(raw)
+    return "rotdd", decode_rotdd_bytes(raw), len(raw)
+
+
+def _patch_ascii_surface_text(
+    mutable: bytearray,
     data: bytes,
-    length: int,
-    min_offset: int = 0x8000,
-    reserved_ranges: list[tuple[int, int]] | None = None,
-) -> int:
-    """
-    Find a zero-filled region in the ROM copy that is safely beyond the header.
+    rom_offset: int,
+    replacement_text: str,
+    allow_unsafe_write: bool = False,
+) -> tuple[bool, int, int]:
+    """Patch one plain-ASCII surface run inside a mutable ROM buffer."""
 
-    The minimum offset is intentionally conservative so we never repoint into the
-    cartridge header or other early boot data just because it happens to contain
-    zeros.
-    """
+    original_bytes = read_terminated_string(data, rom_offset, terminator=0x00)
+    original_length = len(original_bytes)
 
-    needle = bytes([0x00]) * length
-    index = min_offset
-    reserved_ranges = reserved_ranges or []
-    while True:
-        index = data.find(needle, index)
-        if index == -1:
-            raise ValueError("No free space was found for the longer replacement.")
+    try:
+        replacement_bytes = replacement_text.encode("ascii") + bytes([0x00])
+    except UnicodeEncodeError as exc:
+        raise ValueError("ASCII text must be plain ASCII.") from exc
 
-        end = index + length
-        if any(index < reserved_end and end > reserved_start for reserved_start, reserved_end in reserved_ranges):
-            index += 1
-            continue
-        return index
+    if len(replacement_bytes) <= (original_length + 1):
+        mutable[rom_offset:rom_offset + len(replacement_bytes)] = replacement_bytes
+        if len(replacement_bytes) < (original_length + 1):
+            mutable[rom_offset + len(replacement_bytes):rom_offset + original_length + 1] = bytes([0x00]) * (
+                (original_length + 1) - len(replacement_bytes)
+            )
+        return True, rom_offset, len(replacement_bytes)
+
+    pointer_hits = _find_pointer_hits(data, rom_offset)
+    if not pointer_hits:
+        if allow_unsafe_write:
+            unsafe_payload = _force_ascii_in_place_payload(replacement_text, original_length)
+            mutable[rom_offset:rom_offset + original_length + 1] = unsafe_payload
+            return True, rom_offset, len(unsafe_payload)
+        raise ValueError("Replacement is too long for this ASCII string and no pointer table was found.")
+
+    target_rom_offset = _append_repoint_payload(mutable, replacement_bytes)
+    _rewrite_pointer_hits(mutable, pointer_hits, target_rom_offset)
+    return True, target_rom_offset, len(replacement_bytes)
+
+
+def _patch_rotdd_surface_text(
+    mutable: bytearray,
+    data: bytes,
+    rom_offset: int,
+    replacement_text: str,
+    allow_unsafe_write: bool = False,
+) -> tuple[bool, int, int, bool]:
+    """Patch one ROTDD surface run inside a mutable ROM buffer."""
+
+    original_bytes = read_terminated_string(data, rom_offset, terminator=ROTDD_TERMINATOR)
+    original_length = len(original_bytes)
+
+    try:
+        normalized_text, replacement_bytes, auto_wrapped, _dropped_unknowns = fit_surface_text_to_length(
+            replacement_text,
+            original_length,
+        )
+        mutable[rom_offset:rom_offset + original_length] = replacement_bytes
+        return True, rom_offset, len(replacement_bytes), auto_wrapped
+    except ValueError:
+        normalized_text, auto_wrapped = normalize_surface_replacement_text(replacement_text)
+        replacement_bytes = encode_rotdd_surface_text(normalized_text)
+        pointer_hits = _find_pointer_hits(data, rom_offset)
+        if pointer_hits:
+            payload = replacement_bytes + bytes([ROTDD_TERMINATOR])
+            target_rom_offset = _append_repoint_payload(mutable, payload)
+            _rewrite_pointer_hits(mutable, pointer_hits, target_rom_offset)
+            return True, target_rom_offset, len(payload), auto_wrapped
+        if allow_unsafe_write:
+            unsafe_payload = _force_rotdd_in_place_payload(normalized_text, original_length)
+            mutable[rom_offset:rom_offset + original_length] = unsafe_payload
+            return True, rom_offset, len(unsafe_payload), auto_wrapped
+        raise ValueError("Replacement is too long for this ROTDD run and no pointer table was found.")
 
 
 def _find_pointer_hits(data: bytes, rom_offset: int) -> list[int]:
@@ -661,6 +863,7 @@ def _patch_rotdd_run(
     current_name: str,
     replacement_name: str,
     reserved_ranges: list[tuple[int, int]] | None = None,
+    allow_unsafe_write: bool = False,
 ) -> tuple[bool, int, int, bool]:
     """Patch one ROTDD-encoded run inside a mutable ROM buffer."""
 
@@ -679,18 +882,18 @@ def _patch_rotdd_run(
     except ValueError:
         pointer_hits = _find_pointer_hits(data, rom_offset)
         if not pointer_hits:
+            if allow_unsafe_write:
+                normalized_text, _auto_wrapped = normalize_surface_replacement_text(updated_text)
+                replacement_bytes = _force_rotdd_in_place_payload(normalized_text, original_length)
+                mutable[rom_offset:rom_offset + original_length] = replacement_bytes
+                return True, rom_offset, len(replacement_bytes), _auto_wrapped
             raise ValueError(
                 "Replacement is too long for this inline text run and no pointer table was found."
             )
 
         normalized_text, _auto_wrapped = normalize_surface_replacement_text(updated_text)
         replacement_bytes = encode_rotdd_surface_text(normalized_text) + bytes([ROTDD_TERMINATOR])
-        target_rom_offset = _find_global_zero_run(
-            data,
-            len(replacement_bytes),
-            reserved_ranges=reserved_ranges,
-        )
-        mutable[target_rom_offset:target_rom_offset + len(replacement_bytes)] = replacement_bytes
+        target_rom_offset = _append_repoint_payload(mutable, replacement_bytes)
         _rewrite_pointer_hits(mutable, pointer_hits, target_rom_offset)
         return True, target_rom_offset, len(replacement_bytes), _auto_wrapped
 
@@ -706,6 +909,7 @@ def _patch_ascii_run(
     current_name: str,
     replacement_name: str,
     reserved_ranges: list[tuple[int, int]] | None = None,
+    allow_unsafe_write: bool = False,
 ) -> tuple[bool, int, int]:
     """Patch one plain-ASCII run inside a mutable ROM buffer."""
 
@@ -726,14 +930,13 @@ def _patch_ascii_run(
 
     pointer_hits = _find_pointer_hits(data, rom_offset)
     if not pointer_hits:
+        if allow_unsafe_write:
+            replacement_bytes = _force_ascii_in_place_payload(replacement_name, original_length)
+            mutable[rom_offset:rom_offset + original_length + 1] = replacement_bytes
+            return True, rom_offset, len(replacement_bytes)
         raise ValueError("Replacement is too long for this ASCII string and no pointer table was found.")
 
-    target_rom_offset = _find_global_zero_run(
-        data,
-        len(payload),
-        reserved_ranges=reserved_ranges,
-    )
-    mutable[target_rom_offset:target_rom_offset + len(payload)] = payload
+    target_rom_offset = _append_repoint_payload(mutable, payload)
     _rewrite_pointer_hits(mutable, pointer_hits, target_rom_offset)
     return True, target_rom_offset, len(payload)
 
@@ -746,6 +949,8 @@ def patch_character_name_everywhere(
     output_path: Path | None,
     overwrite: bool,
     in_place: bool,
+    mode: str = "strict",
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[CharacterNameRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
     """
     Patch a character name at its canonical source and in every matched text row.
@@ -756,6 +961,7 @@ def patch_character_name_everywhere(
     at the end so the command stays reproducible and easy to audit.
     """
 
+    _report_progress(progress_callback, 0.0, "Locating character row")
     name_rows = export_character_name_map(data)
     canonical_row = select_character_name_row(name_rows, current_name)
     _ensure_replacement_name_is_unique(data, current_name, replacement_name, "character")
@@ -778,7 +984,9 @@ def patch_character_name_everywhere(
     pointer_value = canonical_row.pointer_value
     payload = replacement_bytes + bytes([0x00])
     reserved_ranges: list[tuple[int, int]] = []
+    allow_unsafe_write = mode == "liberal"
 
+    _report_progress(progress_callback, 0.1, "Writing canonical name")
     if len(payload) <= (canonical_row.name_length + 1):
         start = canonical_row.name_rom_offset
         end = start + canonical_row.name_length + 1
@@ -786,13 +994,7 @@ def patch_character_name_everywhere(
         if len(payload) < (canonical_row.name_length + 1):
             mutable[start + len(payload):end] = bytes([0x00]) * (end - (start + len(payload)))
     else:
-        target_rom_offset = _find_zero_run(
-            data=bytes(mutable),
-            start=ROTDD_CHARACTER_NAME_REPOINT_START,
-            end=ROTDD_CHARACTER_NAME_REPOINT_END,
-            length=len(payload),
-        )
-        mutable[target_rom_offset:target_rom_offset + len(payload)] = payload
+        target_rom_offset = _append_repoint_payload(mutable, payload)
         pointer_value = GBA_ROM_BASE + target_rom_offset
         mutable[canonical_row.pointer_table_offset:canonical_row.pointer_table_offset + 4] = (
             pointer_value.to_bytes(4, "little")
@@ -818,7 +1020,13 @@ def patch_character_name_everywhere(
     ]
 
     known_rows = export_known_text_map(data)
-    for row in known_rows:
+    known_total = max(1, len(known_rows))
+    for row_index, row in enumerate(known_rows):
+        _report_progress(
+            progress_callback,
+            0.15 + (0.20 * (row_index / known_total)),
+            "Scanning known text rows",
+        )
         if not pattern.search(row.decoded_text):
             continue
         if any(start <= row.text_rom_offset < end for start, end in patched_ranges):
@@ -835,8 +1043,9 @@ def patch_character_name_everywhere(
                 current_name=current_name,
                 replacement_name=replacement_name,
                 reserved_ranges=reserved_ranges,
+                allow_unsafe_write=allow_unsafe_write,
             )
-        except ValueError:
+        except ValueError as exc:
             skipped_rows.append(
                 CharacterNameReferenceRow(
                     row_index=len(skipped_rows),
@@ -845,6 +1054,7 @@ def patch_character_name_everywhere(
                     source_index=row.local_index,
                     rom_offset=row.text_rom_offset,
                     decoded_text=row.decoded_text,
+                    skip_reason=_short_skip_reason(exc),
                 )
             )
             continue
@@ -864,14 +1074,22 @@ def patch_character_name_everywhere(
                 decoded_text=row.decoded_text,
             )
         )
-        if auto_wrapped:
-            print(
-                f"Auto-wrapped replacement text for {row.table_slug}[{row.local_index}] "
-                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
-            )
 
-    surface_rows = export_text_surface_corpus(data)
-    for row in surface_rows:
+    surface_rows = export_text_surface_corpus(
+        data,
+        progress_callback=(lambda percent, message: _report_progress(
+            progress_callback,
+            0.35 + (percent * 0.40),
+            message,
+        )) if progress_callback is not None else None,
+    )
+    surface_total = max(1, len(surface_rows))
+    for row_index, row in enumerate(surface_rows):
+        _report_progress(
+            progress_callback,
+            0.75 + (0.18 * (row_index / surface_total)),
+            "Scanning dialogue corpus",
+        )
         if not pattern.search(row.decoded_text):
             continue
         if row.rom_offset in patched_offsets:
@@ -889,8 +1107,9 @@ def patch_character_name_everywhere(
                     original_length=original_length,
                     current_name=current_name,
                     replacement_name=replacement_name,
+                    allow_unsafe_write=allow_unsafe_write,
                 )
-            except ValueError:
+            except ValueError as exc:
                 skipped_rows.append(
                     CharacterNameReferenceRow(
                         row_index=len(skipped_rows),
@@ -899,14 +1118,15 @@ def patch_character_name_everywhere(
                         source_index=row.row_index,
                         rom_offset=row.rom_offset,
                         decoded_text=row.decoded_text,
+                        skip_reason=_short_skip_reason(exc),
                     )
                 )
                 continue
         else:
             try:
                 # ASCII surface rows can also repoint when they outgrow the
-                # original slot, so they must participate in the same reserved
-                # free-space pool as the ROTDD surface paths above.
+                # original slot, so they use the same EOF append path as the
+                # ROTDD surface paths above.
                 changed, target_rom_offset, payload_length = _patch_ascii_run(
                     mutable=mutable,
                     data=data,
@@ -915,8 +1135,9 @@ def patch_character_name_everywhere(
                     current_name=current_name,
                     replacement_name=replacement_name,
                     reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
                 )
-            except ValueError:
+            except ValueError as exc:
                 skipped_rows.append(
                     CharacterNameReferenceRow(
                         row_index=len(skipped_rows),
@@ -925,6 +1146,7 @@ def patch_character_name_everywhere(
                         source_index=row.row_index,
                         rom_offset=row.rom_offset,
                         decoded_text=row.decoded_text,
+                        skip_reason=_short_skip_reason(exc),
                     )
                 )
                 continue
@@ -944,12 +1166,8 @@ def patch_character_name_everywhere(
                 decoded_text=row.decoded_text,
             )
         )
-        if row.source_kind == "rotdd" and auto_wrapped:
-            print(
-                f"Auto-wrapped replacement text for surface row {row.row_index} "
-                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
-            )
 
+    _report_progress(progress_callback, 0.95, "Scanning exact ASCII hits")
     for run_start, text in iter_exact_name_ascii_runs(data, current_name):
         if run_start in patched_offsets:
             continue
@@ -957,16 +1175,17 @@ def patch_character_name_everywhere(
             continue
 
         try:
-            changed, target_rom_offset, payload_length = _patch_ascii_run(
-                mutable=mutable,
-                data=data,
-                rom_offset=run_start,
-                original_length=len(text),
-                current_name=current_name,
-                replacement_name=replacement_name,
-                reserved_ranges=reserved_ranges,
-            )
-        except ValueError:
+                changed, target_rom_offset, payload_length = _patch_ascii_run(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=run_start,
+                    original_length=len(text),
+                    current_name=current_name,
+                    replacement_name=replacement_name,
+                    reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
+                )
+        except ValueError as exc:
             skipped_rows.append(
                 CharacterNameReferenceRow(
                     row_index=len(skipped_rows),
@@ -975,6 +1194,7 @@ def patch_character_name_everywhere(
                     source_index=run_start,
                     rom_offset=run_start,
                     decoded_text=text,
+                    skip_reason=_short_skip_reason(exc),
                 )
             )
             continue
@@ -1006,16 +1226,17 @@ def patch_character_name_everywhere(
 
         original_length = len(read_terminated_string(data, run_start, terminator=ROTDD_TERMINATOR))
         try:
-            changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
-                mutable=mutable,
-                data=data,
-                rom_offset=run_start,
-                original_length=original_length,
-                current_name=current_name,
-                replacement_name=replacement_name,
-                reserved_ranges=reserved_ranges,
-            )
-        except ValueError:
+                changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=run_start,
+                    original_length=original_length,
+                    current_name=current_name,
+                    replacement_name=replacement_name,
+                    reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
+                )
+        except ValueError as exc:
             skipped_rows.append(
                 CharacterNameReferenceRow(
                     row_index=len(skipped_rows),
@@ -1024,6 +1245,7 @@ def patch_character_name_everywhere(
                     source_index=run_start,
                     rom_offset=run_start,
                     decoded_text=decoded_text,
+                    skip_reason=_short_skip_reason(exc),
                 )
             )
             continue
@@ -1044,12 +1266,6 @@ def patch_character_name_everywhere(
                 decoded_text=decoded_text,
             )
         )
-        if auto_wrapped:
-            print(
-                f"Auto-wrapped replacement text for surface run at 0x{run_start:08X} "
-                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
-            )
-
     ascii_index = 0
     limit = len(data)
     while ascii_index < limit:
@@ -1078,8 +1294,9 @@ def patch_character_name_everywhere(
                     current_name=current_name,
                     replacement_name=replacement_name,
                     reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
                 )
-        except ValueError:
+        except ValueError as exc:
             skipped_rows.append(
                 CharacterNameReferenceRow(
                     row_index=len(skipped_rows),
@@ -1088,6 +1305,7 @@ def patch_character_name_everywhere(
                     source_index=run_start,
                     rom_offset=run_start,
                     decoded_text=original_text,
+                    skip_reason=_short_skip_reason(exc),
                 )
             )
             continue
@@ -1109,6 +1327,7 @@ def patch_character_name_everywhere(
             )
         )
 
+    _report_progress(progress_callback, 0.99, "Writing patched ROM")
     final_output_path = resolve_patch_output_path(
         source_path=source_path,
         output_path=output_path,
@@ -1117,6 +1336,7 @@ def patch_character_name_everywhere(
     )
     final_output_path.parent.mkdir(parents=True, exist_ok=True)
     final_output_path.write_bytes(mutable)
+    _report_progress(progress_callback, 1.0, "Patch complete")
     return canonical_row, patched_rows, skipped_rows, final_output_path
 
 
@@ -1128,11 +1348,13 @@ def _patch_named_table_everywhere(
     output_path: Path | None,
     overwrite: bool,
     in_place: bool,
+    mode: str,
     table_rows: list[TextMapRow],
     table_slug: str,
     table_label: str,
     table_row_source_kind: str,
     max_length: int,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
     """
     Patch one visible-name table across the confirmed table slice and all
@@ -1143,7 +1365,12 @@ def _patch_named_table_everywhere(
     pointer table.
     """
 
-    source_rows = [row for row in table_rows if row.decoded_text == current_name]
+    _report_progress(progress_callback, 0.0, f"Locating {table_label} row")
+    normalized_current_name = normalize_visible_name(current_name)
+    source_rows = [
+        row for row in table_rows
+        if normalize_visible_name(row.decoded_text) == normalized_current_name
+    ]
     if not source_rows:
         raise ValueError(f"No {table_label}-name row found with decoded text {current_name!r}.")
     _ensure_replacement_name_is_unique(data, current_name, replacement_name, table_label)
@@ -1163,11 +1390,13 @@ def _patch_named_table_everywhere(
     mutable = bytearray(data)
     pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
     reserved_ranges: list[tuple[int, int]] = []
+    allow_unsafe_write = mode == "liberal"
     patched_rows: list[CharacterNameReferenceRow] = []
     skipped_rows: list[CharacterNameReferenceRow] = []
     patched_offsets: set[int] = set()
     patched_ranges: list[tuple[int, int]] = []
 
+    _report_progress(progress_callback, 0.1, f"Scanning {table_label} table")
     for row in source_rows:
         try:
             changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
@@ -1178,8 +1407,9 @@ def _patch_named_table_everywhere(
                 current_name=current_name,
                 replacement_name=replacement_name,
                 reserved_ranges=reserved_ranges,
+                allow_unsafe_write=allow_unsafe_write,
             )
-        except ValueError:
+        except ValueError as exc:
             skipped_rows.append(
                 CharacterNameReferenceRow(
                     row_index=len(skipped_rows),
@@ -1188,6 +1418,7 @@ def _patch_named_table_everywhere(
                     source_index=row.local_index,
                     rom_offset=row.text_rom_offset,
                     decoded_text=row.decoded_text,
+                    skip_reason=_short_skip_reason(exc),
                 )
             )
             continue
@@ -1207,14 +1438,14 @@ def _patch_named_table_everywhere(
                 decoded_text=row.decoded_text,
             )
         )
-        if auto_wrapped:
-            print(
-                f"Auto-wrapped replacement text for {row.table_slug}[{row.local_index}] "
-                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
-            )
-
     known_rows = export_known_text_map(data)
-    for row in known_rows:
+    known_total = max(1, len(known_rows))
+    for row_index, row in enumerate(known_rows):
+        _report_progress(
+            progress_callback,
+            0.1 + (0.25 * (row_index / known_total)),
+            f"Scanning matched ROTDD text",
+        )
         if row.table_slug == table_slug:
             continue
         if not pattern.search(row.decoded_text):
@@ -1227,16 +1458,17 @@ def _patch_named_table_everywhere(
             raise ValueError(f"Unsupported patch codec for table '{row.table_slug}': {row.codec}")
 
         try:
-            changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
-                mutable=mutable,
-                data=data,
-                rom_offset=row.text_rom_offset,
-                original_length=row.text_length,
-                current_name=current_name,
-                replacement_name=replacement_name,
-                reserved_ranges=reserved_ranges,
-            )
-        except ValueError:
+                changed, target_rom_offset, payload_length, auto_wrapped = _patch_rotdd_run(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=row.text_rom_offset,
+                    original_length=row.text_length,
+                    current_name=current_name,
+                    replacement_name=replacement_name,
+                    reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
+                )
+        except ValueError as exc:
             skipped_rows.append(
                 CharacterNameReferenceRow(
                     row_index=len(skipped_rows),
@@ -1245,6 +1477,7 @@ def _patch_named_table_everywhere(
                     source_index=row.local_index,
                     rom_offset=row.text_rom_offset,
                     decoded_text=row.decoded_text,
+                    skip_reason=_short_skip_reason(exc),
                 )
             )
             continue
@@ -1264,14 +1497,21 @@ def _patch_named_table_everywhere(
                 decoded_text=row.decoded_text,
             )
         )
-        if auto_wrapped:
-            print(
-                f"Auto-wrapped replacement text for {row.table_slug}[{row.local_index}] "
-                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
-            )
-
-    surface_rows = export_text_surface_corpus(data)
-    for row in surface_rows:
+    surface_rows = export_text_surface_corpus(
+        data,
+        progress_callback=(lambda percent, message: _report_progress(
+            progress_callback,
+            0.35 + (percent * 0.4),
+            message,
+        )) if progress_callback is not None else None,
+    )
+    surface_total = max(1, len(surface_rows))
+    for row_index, row in enumerate(surface_rows):
+        _report_progress(
+            progress_callback,
+            0.75 + (0.20 * (row_index / surface_total)),
+            "Scanning dialogue corpus",
+        )
         if not pattern.search(row.decoded_text):
             continue
         if row.rom_offset in patched_offsets:
@@ -1289,8 +1529,9 @@ def _patch_named_table_everywhere(
                     original_length=original_length,
                     current_name=current_name,
                     replacement_name=replacement_name,
+                    allow_unsafe_write=allow_unsafe_write,
                 )
-            except ValueError:
+            except ValueError as exc:
                 skipped_rows.append(
                     CharacterNameReferenceRow(
                         row_index=len(skipped_rows),
@@ -1299,6 +1540,7 @@ def _patch_named_table_everywhere(
                         source_index=row.row_index,
                         rom_offset=row.rom_offset,
                         decoded_text=row.decoded_text,
+                        skip_reason=_short_skip_reason(exc),
                     )
                 )
                 continue
@@ -1312,8 +1554,9 @@ def _patch_named_table_everywhere(
                     current_name=current_name,
                     replacement_name=replacement_name,
                     reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
                 )
-            except ValueError:
+            except ValueError as exc:
                 skipped_rows.append(
                     CharacterNameReferenceRow(
                         row_index=len(skipped_rows),
@@ -1322,6 +1565,7 @@ def _patch_named_table_everywhere(
                         source_index=row.row_index,
                         rom_offset=row.rom_offset,
                         decoded_text=row.decoded_text,
+                        skip_reason=_short_skip_reason(exc),
                     )
                 )
                 continue
@@ -1341,12 +1585,8 @@ def _patch_named_table_everywhere(
                 decoded_text=row.decoded_text,
             )
         )
-        if row.source_kind == "rotdd" and auto_wrapped:
-            print(
-                f"Auto-wrapped replacement text for surface row {row.row_index} "
-                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
-            )
 
+    _report_progress(progress_callback, 0.95, "Scanning exact ASCII hits")
     for run_start, text in iter_exact_name_ascii_runs(data, current_name):
         if run_start in patched_offsets:
             continue
@@ -1354,16 +1594,17 @@ def _patch_named_table_everywhere(
             continue
 
         try:
-            changed, target_rom_offset, payload_length = _patch_ascii_run(
-                mutable=mutable,
-                data=data,
-                rom_offset=run_start,
-                original_length=len(text),
-                current_name=current_name,
-                replacement_name=replacement_name,
-                reserved_ranges=reserved_ranges,
-            )
-        except ValueError:
+                changed, target_rom_offset, payload_length = _patch_ascii_run(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=run_start,
+                    original_length=len(text),
+                    current_name=current_name,
+                    replacement_name=replacement_name,
+                    reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
+                )
+        except ValueError as exc:
             skipped_rows.append(
                 CharacterNameReferenceRow(
                     row_index=len(skipped_rows),
@@ -1372,6 +1613,7 @@ def _patch_named_table_everywhere(
                     source_index=run_start,
                     rom_offset=run_start,
                     decoded_text=text,
+                    skip_reason=_short_skip_reason(exc),
                 )
             )
             continue
@@ -1393,6 +1635,7 @@ def _patch_named_table_everywhere(
             )
         )
 
+    _report_progress(progress_callback, 0.99, "Writing patched ROM")
     final_output_path = resolve_patch_output_path(
         source_path=source_path,
         output_path=output_path,
@@ -1401,6 +1644,7 @@ def _patch_named_table_everywhere(
     )
     final_output_path.parent.mkdir(parents=True, exist_ok=True)
     final_output_path.write_bytes(mutable)
+    _report_progress(progress_callback, 1.0, "Patch complete")
     return source_rows[0], patched_rows, skipped_rows, final_output_path
 
 
@@ -1412,6 +1656,8 @@ def patch_class_name_everywhere(
     output_path: Path | None,
     overwrite: bool,
     in_place: bool,
+    mode: str = "strict",
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
     """Patch a class name across the confirmed class slice and matched references."""
 
@@ -1424,11 +1670,13 @@ def patch_class_name_everywhere(
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        mode=mode,
         table_rows=class_rows,
         table_slug=ROTDD_CLASS_NAME_TABLE_SLUG,
         table_label="class",
         table_row_source_kind="class_name_table",
         max_length=ROTDD_CLASS_NAME_MAX_LENGTH,
+        progress_callback=progress_callback,
     )
 
 
@@ -1440,6 +1688,8 @@ def patch_enemy_name_everywhere(
     output_path: Path | None,
     overwrite: bool,
     in_place: bool,
+    mode: str = "strict",
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
     """Patch an enemy name across the confirmed enemy slice and matched references."""
 
@@ -1452,11 +1702,13 @@ def patch_enemy_name_everywhere(
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        mode=mode,
         table_rows=enemy_rows,
         table_slug=ROTDD_ENEMY_NAME_TABLE_SLUG,
         table_label="enemy",
         table_row_source_kind="enemy_name_table",
         max_length=ROTDD_ENEMY_NAME_MAX_LENGTH,
+        progress_callback=progress_callback,
     )
 
 
@@ -1468,6 +1720,8 @@ def patch_item_name_everywhere(
     output_path: Path | None,
     overwrite: bool,
     in_place: bool,
+    mode: str = "strict",
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[TextMapRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
     """Patch an item name across the confirmed item slice and matched references."""
 
@@ -1480,11 +1734,13 @@ def patch_item_name_everywhere(
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        mode=mode,
         table_rows=item_rows,
         table_slug=ROTDD_ITEM_NAME_TABLE_SLUG,
         table_label="item",
         table_row_source_kind="item_name_table",
         max_length=ROTDD_ITEM_NAME_MAX_LENGTH,
+        progress_callback=progress_callback,
     )
 
 
@@ -1496,6 +1752,8 @@ def patch_npc_name_everywhere(
     output_path: Path | None,
     overwrite: bool,
     in_place: bool,
+    mode: str = "strict",
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[NpcNameRow, list[CharacterNameReferenceRow], list[CharacterNameReferenceRow], Path]:
     """
     Patch a dialogue speaker or NPC-style visible name across dialogue text.
@@ -1505,9 +1763,11 @@ def patch_npc_name_everywhere(
     that the corpus exporter can see.
     """
 
+    _report_progress(progress_callback, 0.0, "Locating NPC row")
     npc_rows = export_npc_name_map(data)
     npc_row = select_npc_name_row(npc_rows, current_name)
     _ensure_replacement_name_is_unique(data, current_name, replacement_name, "NPC")
+    allow_unsafe_write = mode == "liberal"
 
     try:
         replacement_bytes = replacement_name.encode("ascii")
@@ -1525,8 +1785,21 @@ def patch_npc_name_everywhere(
     patched_offsets: set[int] = set()
     patched_ranges: list[tuple[int, int]] = []
 
-    surface_rows = export_text_surface_corpus(data)
-    for row in surface_rows:
+    surface_rows = export_text_surface_corpus(
+        data,
+        progress_callback=(lambda percent, message: _report_progress(
+            progress_callback,
+            0.05 + (percent * 0.65),
+            message,
+        )) if progress_callback is not None else None,
+    )
+    surface_total = max(1, len(surface_rows))
+    for row_index, row in enumerate(surface_rows):
+        _report_progress(
+            progress_callback,
+            0.70 + (0.20 * (row_index / surface_total)),
+            "Scanning dialogue corpus",
+        )
         if not pattern.search(row.decoded_text):
             continue
         if row.rom_offset in patched_offsets:
@@ -1545,8 +1818,9 @@ def patch_npc_name_everywhere(
                     current_name=current_name,
                     replacement_name=replacement_name,
                     reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
                 )
-            except ValueError:
+            except ValueError as exc:
                 skipped_rows.append(
                     CharacterNameReferenceRow(
                         row_index=len(skipped_rows),
@@ -1555,6 +1829,7 @@ def patch_npc_name_everywhere(
                         source_index=row.row_index,
                         rom_offset=row.rom_offset,
                         decoded_text=row.decoded_text,
+                        skip_reason=_short_skip_reason(exc),
                     )
                 )
                 continue
@@ -1568,8 +1843,9 @@ def patch_npc_name_everywhere(
                     current_name=current_name,
                     replacement_name=replacement_name,
                     reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
                 )
-            except ValueError:
+            except ValueError as exc:
                 skipped_rows.append(
                     CharacterNameReferenceRow(
                         row_index=len(skipped_rows),
@@ -1578,6 +1854,7 @@ def patch_npc_name_everywhere(
                         source_index=row.row_index,
                         rom_offset=row.rom_offset,
                         decoded_text=row.decoded_text,
+                        skip_reason=_short_skip_reason(exc),
                     )
                 )
                 continue
@@ -1599,12 +1876,7 @@ def patch_npc_name_everywhere(
                 decoded_text=row.decoded_text,
             )
         )
-        if row.source_kind == "rotdd" and auto_wrapped:
-            print(
-                f"Auto-wrapped replacement text for NPC surface row {row.row_index} "
-                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
-            )
-
+    _report_progress(progress_callback, 0.92, "Scanning ROTDD surface runs")
     for run_start, run_bytes, decoded_text in iter_rotdd_surface_runs(data):
         if run_start in patched_offsets:
             continue
@@ -1623,8 +1895,9 @@ def patch_npc_name_everywhere(
                 current_name=current_name,
                 replacement_name=replacement_name,
                 reserved_ranges=reserved_ranges,
+                allow_unsafe_write=allow_unsafe_write,
             )
-        except ValueError:
+        except ValueError as exc:
             skipped_rows.append(
                 CharacterNameReferenceRow(
                     row_index=len(skipped_rows),
@@ -1633,6 +1906,7 @@ def patch_npc_name_everywhere(
                     source_index=run_start,
                     rom_offset=run_start,
                     decoded_text=decoded_text,
+                    skip_reason=_short_skip_reason(exc),
                 )
             )
             continue
@@ -1653,12 +1927,7 @@ def patch_npc_name_everywhere(
                 decoded_text=decoded_text,
             )
         )
-        if auto_wrapped:
-            print(
-                f"Auto-wrapped replacement text for NPC surface run at 0x{run_start:08X} "
-                f"to fit {ROTDD_DIALOGUE_VISIBLE_ROWS} rows of {ROTDD_DIALOGUE_LINE_WIDTH} characters."
-            )
-
+    _report_progress(progress_callback, 0.97, "Scanning ASCII surface runs")
     ascii_index = 0
     limit = len(data)
     while ascii_index < limit:
@@ -1679,16 +1948,17 @@ def patch_npc_name_everywhere(
             continue
 
         try:
-            changed, target_rom_offset, payload_length = _patch_ascii_run(
-                mutable=mutable,
-                data=data,
-                rom_offset=run_start,
-                original_length=len(run),
-                current_name=current_name,
-                replacement_name=replacement_name,
-                reserved_ranges=reserved_ranges,
-            )
-        except ValueError:
+                changed, target_rom_offset, payload_length = _patch_ascii_run(
+                    mutable=mutable,
+                    data=data,
+                    rom_offset=run_start,
+                    original_length=len(run),
+                    current_name=current_name,
+                    replacement_name=replacement_name,
+                    reserved_ranges=reserved_ranges,
+                    allow_unsafe_write=allow_unsafe_write,
+                )
+        except ValueError as exc:
             skipped_rows.append(
                 CharacterNameReferenceRow(
                     row_index=len(skipped_rows),
@@ -1697,6 +1967,7 @@ def patch_npc_name_everywhere(
                     source_index=run_start,
                     rom_offset=run_start,
                     decoded_text=original_text,
+                    skip_reason=_short_skip_reason(exc),
                 )
             )
             continue
@@ -1718,6 +1989,7 @@ def patch_npc_name_everywhere(
             )
         )
 
+    _report_progress(progress_callback, 0.995, "Writing patched ROM")
     final_output_path = resolve_patch_output_path(
         source_path=source_path,
         output_path=output_path,
@@ -1726,6 +1998,7 @@ def patch_npc_name_everywhere(
     )
     final_output_path.parent.mkdir(parents=True, exist_ok=True)
     final_output_path.write_bytes(mutable)
+    _report_progress(progress_callback, 1.0, "Patch complete")
     return npc_row, patched_rows, skipped_rows, final_output_path
 
 
@@ -1742,8 +2015,8 @@ def patch_character_name(
     Patch a character name in the canonical pointer table.
 
     Shorter or equal-length replacements stay in place. Longer replacements are
-    repointed into the observed zero padding before the name bank so we do not
-    disturb the existing table order.
+    repointed to appended space at the end of the copied ROM so we do not guess
+    at internal free space or disturb unrelated data.
     """
 
     rows = export_character_name_map(data)
@@ -1774,13 +2047,7 @@ def patch_character_name(
         if len(payload) < (row.name_length + 1):
             mutable[start + len(payload):end] = bytes([0x00]) * (end - (start + len(payload)))
     else:
-        target_rom_offset = _find_zero_run(
-            data=bytes(mutable),
-            start=ROTDD_CHARACTER_NAME_REPOINT_START,
-            end=ROTDD_CHARACTER_NAME_REPOINT_END,
-            length=len(payload),
-        )
-        mutable[target_rom_offset:target_rom_offset + len(payload)] = payload
+        target_rom_offset = _append_repoint_payload(mutable, payload)
         pointer_value = GBA_ROM_BASE + target_rom_offset
         mutable[row.pointer_table_offset:row.pointer_table_offset + 4] = pointer_value.to_bytes(4, "little")
 

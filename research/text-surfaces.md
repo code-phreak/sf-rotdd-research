@@ -28,7 +28,7 @@ The confirmed enemy slice currently runs through `Soul Eater`.
 
 ### Item-name table
 
-Item names are also exposed through the structured text map and the dedicated item-name workflow.
+Item names are also exposed through the split raw name exports and the dedicated item-name workflow.
 
 This is not a dialogue surface, but it is part of the same general family of visible labels that we want the tooling to edit cleanly.
 
@@ -78,6 +78,16 @@ The strings continue for many pages and include conversational exchanges, missio
 
 The current evidence strongly suggests a story or script text surface, but the exact engine behavior still needs verification.
 
+### Known Dialogue Windows
+
+The current corpus review points to a few reliable dialogue windows that are useful when checking story text and NPC-speaker extraction:
+
+- Priest general dialogue: `0x001D276F` to `0x001D2E72`
+- Merchant general dialogue: `0x001D2E72` to `0x001D3536`
+- Merchant-related later dialogue: `0x001DC487` to `0x001DD0D5`
+
+The first two ranges meet at the same boundary. The later merchant block looks related, but it may be a separate scene bank, so both ranges are worth keeping for now.
+
 ### Early observations
 
 - The bank appears to be a contiguous encoded text run rather than plain ASCII.
@@ -107,16 +117,21 @@ The current `export-text-surface-corpus` command writes one combined CSV to `res
 
 Current columns:
 
-- `row_index`
 - `source_kind`
 - `rom_offset`
+- `type`
 - `decoded_text`
 
 `source_kind` distinguishes confirmed ROTDD-script rows from plain ASCII surface rows so future rename and patch workflows can make the right encoder choice.
+`type` comes from the current corpus review notes, and rows that are not called out there default to `unsorted`.
 
 The file intentionally stays text-only. Unknown bytes remain visible as placeholder tokens like `<XX>` until we map them.
 
-The text columns are quoted. That keeps the file readable while still protecting commas and inline tags inside the text cells.
+The `decoded_text` column is always quoted. That keeps the file readable while still protecting commas and inline tags inside the text cells.
+
+For larger edit passes, `text-surface export template` can filter one `type` value from `research/raw/text-surfaces.csv` and write a two-column template to `ignore/temp/`. The template writer quotes `decoded_text` the same way the corpus export does. `text-surface patch file` compares that template against the current corpus and only rewrites the rows whose text actually changed, using EOF repointing when a safe pointer target exists. `unsorted` rows have been reliable so far when the replacement stays the same length or shorter, but multi-line template rewriting is still experimental.
+
+`text-surface patch file` can also regenerate the reference corpus CSV after patching when you pass `--refs rewrite`. If you pass `--refs keep`, the corpus file is left alone. If you omit the tag, the tool explains the choice once, prompts for it, and can remember the answer locally.
 
 Current dialogue-token conventions in the export:
 
@@ -125,6 +140,7 @@ Current dialogue-token conventions in the export:
 - `<SPEAKER_BREAK>` marks a speaker handoff
 - `<PLAYER_NAME>` marks the stored player-name insertion point
 - `<QUOTE>` marks a double quote
+- `…` is accepted in editable CSVs as shorthand for `...` and is normalized to the period bytes the ROM uses
 - visible digits `0` through `5` are decoded from the surface codec rather than left as placeholders
 - observed-but-unnamed in-dialogue bytes are preserved as placeholder tags when they occur inside readable rows, so the corpus stays contiguous without claiming a meaning we have not confirmed yet
 - the current read on `0x02` and `0x05` is that they behave like pauses or delays, but that is still unconfirmed, so they remain untranslated in the corpus for now
@@ -144,7 +160,7 @@ The dialogue/script pass is intentionally stricter and keeps only rows with actu
 
 `patch-text-at-offset` is the companion write command for when you already know the literal ROM offset for a line and want to replace it while staying within the original byte budget.
 Pass the address and replacement text as separate positional arguments, and quote the replacement when it contains spaces or punctuation so the shell keeps it together as one argument.
-The command will automatically wrap text on whole-word boundaries to the observed 35-character line width when no explicit `<NEWLINE>` tags are provided, trim trailing padding spaces when it needs to fit the original byte budget, and refuse to expand beyond the three visible rows on a single page.
+The command will automatically wrap text on whole-word boundaries to the observed 32-character line width when no explicit `<NEWLINE>` tags are provided, trim trailing padding spaces when it needs to fit the original byte budget, and refuse to expand beyond the three visible rows on a single page.
 If a short punctuated token would be orphaned at the end of a long line, the command nudges it to the next line instead of splitting it.
 
 Patch-time reminder:

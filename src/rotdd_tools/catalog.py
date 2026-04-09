@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import csv
 import re
+from collections.abc import Callable
 from pathlib import Path
+from functools import lru_cache
 
 from .gba import (
     GBA_ROM_BASE,
@@ -19,7 +21,14 @@ from .gba import (
     printable_ascii,
     read_terminated_string,
 )
-from .models import CharacterNameRow, NpcNameRow, TextMapRow, TextSurfaceRow
+from .models import (
+    CharacterNameRow,
+    NpcNameRow,
+    TextMapRow,
+    TextSurfaceRow,
+    TextSurfaceTemplateRow,
+)
+from .paths import REPO_ROOT
 from .rotdd import (
     GAME_SLUG,
     ROTDD_CHARACTER_NAME_COUNT,
@@ -55,6 +64,85 @@ NON_NPC_DIALOGUE_LABELS = {
     normalize_visible_name("Victory Conditions"),
     normalize_visible_name("Clear Bonus"),
 }
+
+
+TEXT_SURFACE_DROP_OFFSETS: set[int] = {
+    0x0029D770,
+    0x002DD448,
+    0x002DD648,
+    0x00305749,
+    0x00305BB2,
+    0x0032EBE4,
+    0x0032F11C,
+    0x003312A8,
+    0x0033BCBA,
+    0x0033FFC8,
+    0x00340057,
+    0x00340768,
+    0x003450A1,
+    0x0034BFC0,
+    0x0034C3A4,
+    0x00351D52,
+    0x0035DAFE,
+    0x0035E345,
+    0x003655CC,
+    0x00366B05,
+    0x00366D8D,
+    0x0036B573,
+    0x0036EB26,
+    0x0036EBBD,
+    0x0037C874,
+    0x00385883,
+    0x00391454,
+    0x00391494,
+    0x00398DB9,
+    0x00398E04,
+    0x00398FBC,
+    0x003A23F8,
+    0x003AF4DA,
+    0x00624524,
+    0x00625324,
+    0x00696194,
+    0x006CD24D,
+    0x006EA8B5,
+    0x00788FFE,
+}
+
+TEXT_SURFACE_TYPED_OFFSET_RANGES: tuple[tuple[int, int, str], ...] = (
+    (0x001AA623, 0x001AC38C, "object_descriptor"),
+    (0x001D092D, 0x001D0B5F, "opening_scene"),
+    (0x001D459D, 0x001D7E5C, "item_descriptor"),
+    (0x001DA9C0, 0x001DB0AC, "stage_title"),
+    (0x001DB0AD, 0x001DB95A, "victory_condition"),
+    (0x001DB95B, 0x001DD5B7, "battle_text"),
+    (0x001DD5B8, 0x001DE69C, "name_block"),
+    (0x001DE69D, 0x001DEB4D, "menu_text"),
+    (0x0007AA40, 0x0007ADA8, "credits"),
+)
+
+
+@lru_cache(maxsize=1)
+def _canonical_playable_character_names() -> set[str]:
+    """
+    Load the stable canonical playable-character roster from the checked-in CSV.
+
+    This stays separate from the current ROM export so NPC extraction continues
+    to recognize playable characters even after the user renames them in a test
+    ROM copy.
+    """
+
+    character_csv = REPO_ROOT / "research" / "raw" / "character-names.csv"
+    names: set[str] = set()
+    try:
+        with character_csv.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                name = (row.get("decoded_name") or "").strip()
+                if name:
+                    names.add(normalize_visible_name(name))
+    except OSError:
+        pass
+    return names
 
 
 def _looks_like_non_npc_dialogue_label(speaker_name: str, body_text: str) -> bool:
@@ -148,6 +236,46 @@ def _looks_like_ascii_surface(text: str) -> bool:
     return True
 
 
+def _range_contains(index: int, ranges: tuple[tuple[int, int], ...]) -> bool:
+    """Return True when an index falls within any inclusive range."""
+
+    return any(start <= index <= end for start, end in ranges)
+
+
+def _classify_text_surface_row(
+    rom_offset: int,
+    decoded_text: str,
+    enemy_names: set[str],
+    item_names: set[str],
+) -> tuple[str, bool]:
+    """
+    Assign a corpus type label and whether the row should be kept.
+
+    The modify-file instructions label only a handful of confirmed ranges.
+    Anything else defaults to `unsorted`.
+    """
+
+    if rom_offset in TEXT_SURFACE_DROP_OFFSETS:
+        return "unsorted", False
+
+    if _range_contains(
+        rom_offset,
+        tuple((start, end) for start, end, _label in TEXT_SURFACE_TYPED_OFFSET_RANGES),
+    ):
+        for start, end, label in TEXT_SURFACE_TYPED_OFFSET_RANGES:
+            if start <= rom_offset <= end:
+                if label != "name_block":
+                    return label, True
+                normalized = normalize_visible_name(strip_surface_tags(decoded_text))
+                if normalized in enemy_names:
+                    return "enemy_name", True
+                if normalized in item_names:
+                    return "item_name", True
+                return "unsorted", True
+
+    return "unsorted", True
+
+
 def _expand_ascii_run(data: bytes, hit: int, needle_length: int) -> tuple[int, int]:
     """
     Expand an exact ASCII hit to the surrounding printable run.
@@ -170,7 +298,7 @@ def _expand_ascii_run(data: bytes, hit: int, needle_length: int) -> tuple[int, i
 
 def iter_exact_name_ascii_runs(data: bytes, current_name: str):
     """
-    Yield exact ASCII runs that contain a specific character name.
+    Yield ASCII runs that contain a specific character name or its plural form.
 
     This targets short roster or menu labels that can be missed by the broader
     surface-corpus filters, while still avoiding subword matches inside longer
@@ -178,14 +306,45 @@ def iter_exact_name_ascii_runs(data: bytes, current_name: str):
     """
 
     try:
-        needle = current_name.encode("ascii")
+        current_name.encode("ascii")
     except UnicodeEncodeError:
         return
 
-    pattern = re.compile(rf"(?<![A-Za-z]){re.escape(current_name)}(?![A-Za-z])")
-    for hit in iter_find_all(data, needle):
-        run_start, run_end = _expand_ascii_run(data, hit, len(needle))
-        text = data[run_start:run_end].decode("ascii", errors="replace")
+    def pluralize(name: str) -> str:
+        parts = name.split()
+        if not parts:
+            return name
+        last = parts[-1]
+        if re.search(r"(s|x|z|ch|sh)$", last, re.IGNORECASE):
+            plural_last = last + "es"
+        elif re.search(r"[^aeiou]y$", last, re.IGNORECASE):
+            plural_last = last[:-1] + "ies"
+        else:
+            plural_last = last + "s"
+        return " ".join(parts[:-1] + [plural_last])
+
+    singular = re.escape(current_name)
+    plural_name = pluralize(current_name)
+    plural = re.escape(plural_name)
+    if plural == singular:
+        pattern = re.compile(rf"(?<![A-Za-z]){singular}(?![A-Za-z])", re.IGNORECASE)
+    else:
+        pattern = re.compile(rf"(?<![A-Za-z])(?:{singular}|{plural})(?![A-Za-z])", re.IGNORECASE)
+
+    ascii_index = 0
+    limit = len(data)
+    while ascii_index < limit:
+        if not printable_ascii(data[ascii_index]):
+            ascii_index += 1
+            continue
+
+        run_start = ascii_index
+        run: list[int] = []
+        while ascii_index < limit and printable_ascii(data[ascii_index]):
+            run.append(data[ascii_index])
+            ascii_index += 1
+
+        text = bytes(run).decode("ascii", errors="replace")
         if pattern.search(text):
             yield run_start, text
 
@@ -435,12 +594,14 @@ def export_text_surface_map(
             break
         raw = data[index:terminator]
         if raw:
+            decoded_text = decode_rotdd_bytes(raw)
             exported.append(
                 TextSurfaceRow(
                     row_index=row_index,
                     source_kind="rotdd",
                     rom_offset=index,
-                    decoded_text=decode_rotdd_bytes(raw),
+                    surface_type="unsorted",
+                    decoded_text=decoded_text,
                 )
             )
             row_index += 1
@@ -452,6 +613,7 @@ def export_text_surface_map(
 def export_text_surface_corpus(
     data: bytes,
     min_len: int = 24,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> list[TextSurfaceRow]:
     """
     Export a whole-ROM dialogue-like corpus.
@@ -465,10 +627,26 @@ def export_text_surface_corpus(
     index = 0
     row_index = 0
     limit = len(data)
+    last_reported = -1.0
+    named_entities = collect_named_entity_name_sets(data)
+    enemy_name_set = named_entities["enemy"]
+    item_name_set = named_entities["item"]
 
+    def report_progress(percent: float, message: str) -> None:
+        nonlocal last_reported
+        if progress_callback is None:
+            return
+        percent = max(0.0, min(1.0, percent))
+        if percent - last_reported < 0.01 and percent < 1.0:
+            return
+        last_reported = percent
+        progress_callback(percent, message)
+
+    report_progress(0.0, "Scanning ROTDD text surfaces")
     while index < limit:
         if not is_known_rotdd_surface_byte(data[index]):
             index += 1
+            report_progress((index / limit) * 0.5 if limit else 0.5, "Scanning ROTDD text surfaces")
             continue
 
         run_start = index
@@ -476,9 +654,19 @@ def export_text_surface_corpus(
         while index < limit and is_known_rotdd_surface_byte(data[index]):
             run.append(data[index])
             index += 1
+            report_progress((index / limit) * 0.5 if limit else 0.5, "Scanning ROTDD text surfaces")
 
         decoded_text = decode_rotdd_bytes(bytes(run))
         if not _looks_like_rotdd_surface(decoded_text, run, min_len):
+            continue
+        surface_type, keep_row = _classify_text_surface_row(
+            run_start,
+            decoded_text,
+            enemy_name_set,
+            item_name_set,
+        )
+        if not keep_row:
+            row_index += 1
             continue
 
         exported.append(
@@ -486,6 +674,7 @@ def export_text_surface_corpus(
                 row_index=row_index,
                 source_kind="rotdd",
                 rom_offset=run_start,
+                surface_type=surface_type,
                 decoded_text=decoded_text,
             )
         )
@@ -494,9 +683,11 @@ def export_text_surface_corpus(
     ascii_min_len = max(4, min_len // 2)
     ascii_allowed_punctuation = set(" '-.,!:;?")
     index = 0
+    report_progress(0.5, "Scanning ASCII text surfaces")
     while index < limit:
         if not printable_ascii(data[index]):
             index += 1
+            report_progress(0.5 + ((index / limit) * 0.5 if limit else 0.5), "Scanning ASCII text surfaces")
             continue
 
         run_start = index
@@ -504,6 +695,7 @@ def export_text_surface_corpus(
         while index < limit and printable_ascii(data[index]):
             run.append(data[index])
             index += 1
+            report_progress(0.5 + ((index / limit) * 0.5 if limit else 0.5), "Scanning ASCII text surfaces")
 
         if len(run) < ascii_min_len:
             continue
@@ -515,43 +707,111 @@ def export_text_surface_corpus(
             continue
         if not _looks_like_ascii_surface(text):
             continue
+        surface_type, keep_row = _classify_text_surface_row(
+            run_start,
+            text,
+            enemy_name_set,
+            item_name_set,
+        )
+        if not keep_row:
+            row_index += 1
+            continue
 
         exported.append(
             TextSurfaceRow(
                 row_index=row_index,
                 source_kind="ascii",
                 rom_offset=run_start,
+                surface_type=surface_type,
                 decoded_text=text,
             )
         )
         row_index += 1
 
+    report_progress(1.0, "Text surface scan complete")
     return exported
 
 
 def write_text_surface_csv(rows: list[TextSurfaceRow], output_path: Path) -> None:
     """Write contiguous text-surface rows to disk."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["row_index", "source_kind", "rom_offset", "decoded_text"]
+    fieldnames = ["source_kind", "rom_offset", "type", "decoded_text"]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(fieldnames)
+        handle.write(",".join(fieldnames) + "\n")
         for row in rows:
-            writer.writerow(
-                [
-                    row.row_index,
-                    row.source_kind,
-                    f"0x{row.rom_offset:08X}",
-                    row.decoded_text,
-                ]
+            decoded_text = row.decoded_text.replace('"', '""')
+            handle.write(
+                f"{row.source_kind},0x{row.rom_offset:08X},{row.surface_type},\"{decoded_text}\"\n"
             )
+
+
+def read_text_surface_csv(input_path: Path) -> list[TextSurfaceRow]:
+    """Load an existing text-surface CSV from disk."""
+
+    rows: list[TextSurfaceRow] = []
+    with input_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row_index, row in enumerate(reader):
+            rows.append(
+                TextSurfaceRow(
+                    row_index=row_index,
+                    source_kind=(row.get("source_kind") or "").strip(),
+                    rom_offset=int((row.get("rom_offset") or "0"), 0),
+                    surface_type=(row.get("type") or "").strip(),
+                    decoded_text=(row.get("decoded_text") or ""),
+                )
+            )
+    return rows
+
+
+def export_text_surface_template_rows(
+    rows: list[TextSurfaceRow],
+    surface_type: str,
+) -> list[TextSurfaceTemplateRow]:
+    """Build a two-column template from a filtered text-surface slice."""
+
+    return [
+        TextSurfaceTemplateRow(rom_offset=row.rom_offset, decoded_text=row.decoded_text)
+        for row in rows
+        if row.surface_type == surface_type
+    ]
+
+
+def write_text_surface_template_csv(
+    rows: list[TextSurfaceTemplateRow],
+    output_path: Path,
+) -> None:
+    """Write a two-column editable text-surface template to disk."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["rom_offset", "decoded_text"]
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        handle.write(",".join(fieldnames) + "\n")
+        for row in rows:
+            decoded_text = row.decoded_text.replace('"', '""')
+            handle.write(f"0x{row.rom_offset:08X},\"{decoded_text}\"\n")
+
+
+def load_text_surface_template_csv(input_path: Path) -> list[TextSurfaceTemplateRow]:
+    """Load a two-column text-surface template CSV from disk."""
+
+    rows: list[TextSurfaceTemplateRow] = []
+    with input_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            rows.append(
+                TextSurfaceTemplateRow(
+                    rom_offset=int((row.get("rom_offset") or "0"), 0),
+                    decoded_text=(row.get("decoded_text") or ""),
+                )
+            )
+    return rows
 
 
 def write_npc_name_csv(rows: list[NpcNameRow], output_path: Path) -> None:
     """Write the dialogue-speaker name map to disk."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
-        "row_index",
         "first_source_index",
         "first_rom_offset",
         "occurrence_count",
@@ -563,7 +823,6 @@ def write_npc_name_csv(rows: list[NpcNameRow], output_path: Path) -> None:
         for row in rows:
             writer.writerow(
                 [
-                    row.row_index,
                     row.first_source_index,
                     f"0x{row.first_rom_offset:08X}",
                     row.occurrence_count,
@@ -583,6 +842,7 @@ def export_npc_name_map(data: bytes) -> list[NpcNameRow]:
     """
 
     taken_names = collect_named_entity_name_sets(data)
+    taken_names["character"].update(_canonical_playable_character_names())
     taken_name_set = set().union(*taken_names.values())
     speaker_pattern = re.compile(r"^(?P<speaker>[A-Za-z][A-Za-z .'\-]{0,31}):(?:\s|$)")
     totals: dict[str, dict[str, object]] = {}

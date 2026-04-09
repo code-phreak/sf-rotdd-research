@@ -1,6 +1,6 @@
 # Roadmap
 
-This document is the living progress log and near-term roadmap for the project.
+This document is the living roadmap for the project.
 It tracks what is already confirmed, what is currently implemented, and what we
 plan to tackle next.
 
@@ -9,17 +9,16 @@ plan to tackle next.
 - story dialogue and broader text manipulation
 - conservative character-attribute editing
 - a more API-like command structure for future game edits
+- enemy rename is in active testing while broad repoint behavior is still being verified
 
 ## What Is Confirmed
 
 - class names exist in the first slice of a confirmed ROTDD text table after the item names
 - enemy names exist in the second slice of that same table and currently run through `Soul Eater`; the confirmed export now covers 79 enemy rows
-- item names can now be browsed with `list-item-names`
-- item names can be renamed safely with `patch-item-name`
-- the newer `item <name> rename <replacement>` command shape is the preferred API-style entry point, with `patch-item-name` kept as a compatibility alias
-- dialogue-speaker names can now be browsed with `list-npc-names`
-- dialogue-speaker names can be renamed safely with `patch-npc-name`
-- the newer `npc <name> rename <replacement>` command shape is the preferred API-style entry point, with `patch-npc-name` kept as a compatibility alias
+- item names can now be browsed with `item list names`
+- item names can be renamed safely with `item patch name <current> <replacement>`
+- dialogue-speaker names can now be browsed with `npc list names`
+- dialogue-speaker names can be renamed safely with `npc patch name <current> <replacement>`
 - NPC extraction treats playable names, enemies, classes, and items as higher-priority categories and excludes them from the NPC map
 - spell and item names exist in a custom single-byte text bank
 - the canonical character-name table is a plain ASCII pointer table at `0x0056F578`
@@ -28,21 +27,16 @@ plan to tackle next.
 - a narrower contiguous dialogue/script excerpt export remains available for known ROM ranges
 - mapped text rows can be browsed with `list-known-text`
 - mapped text rows can be patched safely with `patch-known-text`
-- character names can be browsed with `list-character-names`
-- character names can be renamed safely with `patch-character-name`
-- the newer `character <name> rename <replacement>` command shape is the preferred API-style entry point, with `patch-character-name` kept as a compatibility alias
-- class names can now be browsed with `list-class-names`
-- class names can be renamed safely with `patch-class-name`
-- the newer `class <name> rename <replacement>` command shape is the preferred API-style entry point, with `patch-class-name` kept as a compatibility alias
-- enemy names can now be browsed with `list-enemy-names`
-- enemy names can be renamed safely with `patch-enemy-name`
-- the newer `enemy <name> rename <replacement>` command shape is the preferred API-style entry point, with `patch-enemy-name` kept as a compatibility alias
-- item names can now be browsed with `list-item-names`
-- item names can be renamed safely with `patch-item-name`
-- the newer `item <name> rename <replacement>` command shape is the preferred API-style entry point, with `patch-item-name` kept as a compatibility alias
-- dialogue-speaker names can now be browsed with `list-npc-names`
-- dialogue-speaker names can be renamed safely with `patch-npc-name`
-- the newer `npc <name> rename <replacement>` command shape is the preferred API-style entry point, with `patch-npc-name` kept as a compatibility alias
+- character names can be browsed with `character list names`
+- character names can be renamed safely with `character patch name <current> <replacement>`
+- class names can now be browsed with `class list names`
+- class names can be renamed safely with `class patch name <current> <replacement>`
+- enemy names can now be browsed with `enemy list names`
+- enemy names can be renamed safely with `enemy patch name <current> <replacement>`
+- item names can now be browsed with `item list names`
+- item names can be renamed safely with `item patch name <current> <replacement>`
+- dialogue-speaker names can now be browsed with `npc list names`
+- dialogue-speaker names can be renamed safely with `npc patch name <current> <replacement>`
 - arbitrary ROM offsets can be patched with `patch-text-at-offset`
 - additional ROTDD-style text runs can be scanned with `scan-rotdd-runs`
 - the dialogue codec currently supports punctuation, control tags, visible digits, and whole-name replacements in a CSV-friendly format
@@ -50,10 +44,16 @@ plan to tackle next.
 
 ## Near-Term Roadmap
 
+### 0. Pointer repoint safety for large bulk edits
+
+- decide how the tool should identify verified pointer references before rewriting them
+- stop treating raw byte matches as proof of a real text pointer when broad template patching repoints to EOF
+- keep the current broad repoint path marked as unstable until we can prove it is safe for full-story rewrites
+- prefer a verified-pointer list or an explicit map over whole-ROM pointer scans when we revisit this
+
 ### 1. Character rename API polish
 
-- keep `character <name> rename <replacement>` as the main forward-looking command shape
-- keep `patch-character-name` as a stable alias for existing scripts and muscle memory
+- keep `character patch name <current> <replacement>` as the main forward-looking command shape
 - add more character actions later without breaking the rename workflow
 
 ### 2. Raw save-file patching
@@ -61,6 +61,7 @@ plan to tackle next.
 - add support for patching the game's raw battery save format, not emulator savestates
 - document that savestates are emulator snapshots and are not a stable format to target generically
 - keep save patching separate from ROM patching so both workflows stay understandable
+- note that appended repoints can enlarge a ROM image, so hardware and flashcart validation may need a separate compatibility check
 
 ### 3. Class and enemy names and other visible names
 

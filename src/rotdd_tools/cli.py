@@ -3,25 +3,42 @@
 from __future__ import annotations
 
 import argparse
+import random
 import sys
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from .catalog import (
     export_character_name_map,
     export_class_name_map,
     export_enemy_name_map,
+    export_known_text_map,
     export_item_name_map,
     export_npc_name_map,
+    export_text_surface_template_rows,
     export_text_surface_corpus,
     export_text_surface_map,
+    read_text_surface_csv,
     write_class_name_csv,
     write_enemy_name_csv,
     write_item_name_csv,
     write_character_name_csv,
     write_npc_name_csv,
+    write_text_surface_template_csv,
     write_text_surface_csv,
 )
-from .editing import patch_character_name_everywhere, patch_class_name_everywhere, patch_enemy_name_everywhere, patch_item_name_everywhere, patch_known_text, patch_npc_name_everywhere, patch_text_at_offset
+from .editing import (
+    patch_character_name_everywhere,
+    patch_class_name_everywhere,
+    patch_enemy_name_everywhere,
+    patch_item_name_everywhere,
+    patch_known_text,
+    patch_npc_name_everywhere,
+    patch_text_at_offset,
+    patch_text_surface_template_file,
+)
 from .gba import GBA_ROM_BASE, format_ascii, iter_find_all, printable_ascii, read_terminated_string
 from .paths import REPO_ROOT, resolve_rom_path
 from .rotdd import (
@@ -63,6 +80,353 @@ def print_rotdd_encoding(text: str) -> None:
     encoded = encode_rotdd_surface_text(text)
     print(text)
     print(" ".join(f"{byte:02X}" for byte in encoded))
+
+
+class ProgressBar:
+    """Small stderr progress bar for long-running CLI commands."""
+
+    def __init__(self, label: str = "Working", width: int = 28) -> None:
+        self.label = label
+        self.width = width
+        self.enabled = sys.stderr.isatty()
+        self._last_render = ""
+        self._last_render_len = 0
+        self._message = label
+        self._progress = 0.0
+        self._stop_event = threading.Event()
+        self._real_progress_seen = threading.Event()
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        if self.enabled:
+            self._thread = threading.Thread(target=self._idle_loop, daemon=True)
+            self._thread.start()
+
+    def update(self, percent: float, message: str) -> None:
+        if not self.enabled:
+            return
+        percent = max(0.0, min(1.0, percent))
+        with self._lock:
+            self._message = message
+            if percent > 0.0:
+                self._real_progress_seen.set()
+                self._progress = max(self._progress, percent)
+            else:
+                percent = max(percent, self._progress)
+            self._render_locked(percent, message)
+
+    def finish(self, message: str = "Done") -> None:
+        if not self.enabled:
+            return
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=0.5)
+        with self._lock:
+            self._render_locked(1.0, message)
+        sys.stderr.write("\n")
+        sys.stderr.flush()
+
+    def _idle_loop(self) -> None:
+        """Keep the bar gently moving until real progress starts."""
+
+        while not self._stop_event.is_set() and not self._real_progress_seen.is_set():
+            if self._stop_event.wait(random.uniform(1.0, 2.0)):
+                return
+            with self._lock:
+                if self._real_progress_seen.is_set():
+                    return
+                self._progress = min(0.085, self._progress + random.uniform(0.001, 0.003))
+                self._render_locked(self._progress, self._message)
+
+    def _render_locked(self, percent: float, message: str) -> None:
+        """Render one progress line while clearing any leftover characters."""
+
+        percent = max(0.0, min(1.0, percent))
+        filled = int(round(self.width * percent))
+        bar = "#" * filled + "-" * (self.width - filled)
+        line = f"[{bar}] {percent * 100:6.1f}% {message}"
+        if line == self._last_render:
+            return
+        self._last_render = line
+        self._progress = max(self._progress, percent)
+        padded = line.ljust(max(self._last_render_len, len(line)))
+        self._last_render_len = max(self._last_render_len, len(line))
+        sys.stderr.write("\r" + padded)
+        sys.stderr.flush()
+
+
+def fresh_boot_notice() -> str:
+    """Return the emulator fresh-boot reminder used after write commands."""
+
+    return (
+        "If this patch is being tested in an emulator, prefer a fresh boot or a freshly reloaded save so cached UI "
+        "state does not hide the result of the ROM patch."
+    )
+
+
+def refs_mode_path() -> Path:
+    """Return the local preference file used for text-surface ref handling."""
+
+    return REPO_ROOT / "scripts" / "text_surface_refs.local.txt"
+
+
+def load_refs_mode_preference() -> str | None:
+    """Load the saved text-surface ref preference if it exists."""
+
+    path = refs_mode_path()
+    try:
+        value = path.read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return None
+    return value if value in {"rewrite", "keep"} else None
+
+
+def save_refs_mode_preference(mode: str) -> None:
+    """Persist the chosen text-surface ref preference locally."""
+
+    path = refs_mode_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{mode}\n", encoding="utf-8")
+
+
+def clear_refs_mode_preference() -> None:
+    """Remove the saved text-surface ref preference if it exists."""
+
+    path = refs_mode_path()
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
+def choose_refs_mode(explicit_mode: str | None) -> str:
+    """
+    Resolve the ref-file handling mode.
+
+    If the caller supplied a mode, use it. Otherwise fall back to a saved local
+    preference or prompt once and optionally remember the answer.
+    """
+
+    if explicit_mode is not None:
+        return explicit_mode
+
+    saved = load_refs_mode_preference()
+    if saved is not None:
+        return saved
+
+    if not sys.stdin.isatty():
+        return "keep"
+
+    print("The ref-file option controls whether the corpus CSV is regenerated after patching.")
+    print("rewrite: patch the ROM and regenerate the reference corpus CSV from the patched ROM.")
+    print("keep: patch the ROM and leave the reference CSV unchanged.")
+    while True:
+        choice = input("Choose ref-file mode [keep/rewrite]: ").strip().lower() or "keep"
+        if choice in {"keep", "rewrite"}:
+            break
+        print("Please enter 'keep' or 'rewrite'.")
+    remember = input("Save this preference for future runs? [y/N]: ").strip().lower() in {"y", "yes"}
+    if remember:
+        save_refs_mode_preference(choice)
+    return choice
+
+
+def _format_skipped_reference(ref) -> str:
+    """Render a compact one-line summary for a skipped rename reference."""
+
+    kind_map = {
+        "canonical_name": "canonical",
+        "known_text": "known",
+        "rotdd_surface_run": "surface-run",
+        "ascii_exact_name": "ascii-name",
+        "ascii_surface": "ascii-surface",
+        "text_surface:rotdd": "surface",
+        "text_surface:ascii": "ascii-surface",
+        "npc_surface:rotdd": "npc-surface",
+        "npc_surface:ascii": "npc-ascii",
+        "npc_surface_run": "npc-run",
+        "npc_ascii_surface": "npc-ascii",
+        "character_name_table": "character",
+        "class_name_table": "class",
+        "enemy_name_table": "enemy",
+        "item_name_table": "item",
+    }
+    suffix = f" reason={ref.skip_reason}" if getattr(ref, "skip_reason", "") else ""
+    kind = kind_map.get(ref.source_kind, ref.source_kind)
+    return (
+        f"  kind={kind} "
+        f"rom=0x{ref.rom_offset:08X} "
+        f"src={ref.source_label}[{ref.source_index}]" + suffix
+    )
+
+
+def _emit_messages(messages: list[str]) -> None:
+    """Print deferred user-facing lines after long-running work finishes."""
+
+    for message in messages:
+        print(message)
+
+
+def _add_write_args(parser: argparse.ArgumentParser) -> None:
+    """Add the standard output/write flags used by patch commands."""
+
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
+
+def _add_entity_tree_parser(
+    parser: argparse.ArgumentParser,
+    *,
+    display_name: str,
+    export_output: Path,
+    list_help: str,
+    export_help: str,
+    patch_help: str,
+    allow_stat: bool,
+    patch_help_suffix: str,
+) -> None:
+    """Add the tree-style entity command surface."""
+
+    entity_subparsers = parser.add_subparsers(dest="action", required=True)
+
+    export_parser = entity_subparsers.add_parser("export", help=export_help)
+    export_subparsers = export_parser.add_subparsers(dest="target", required=True)
+    export_map_parser = export_subparsers.add_parser(
+        "map",
+        help=f"Export the confirmed {display_name} slice to a CSV artifact.",
+    )
+    export_map_parser.add_argument(
+        "--output",
+        type=Path,
+        default=export_output,
+        help="Output CSV path, relative to the repository root by default.",
+    )
+
+    list_parser = entity_subparsers.add_parser("list", help=list_help)
+    list_subparsers = list_parser.add_subparsers(dest="target", required=True)
+    list_names_parser = list_subparsers.add_parser(
+        "names",
+        help=f"List the confirmed {display_name} names from the current table.",
+    )
+    list_names_parser.add_argument(
+        "--contains",
+        help="Only list names whose decoded text contains this substring.",
+    )
+    list_names_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of rows to print.",
+    )
+
+    patch_parser = entity_subparsers.add_parser("patch", help=patch_help)
+    patch_subparsers = patch_parser.add_subparsers(dest="target", required=True)
+    patch_name_parser = patch_subparsers.add_parser(
+        "name",
+        help=patch_help_suffix,
+    )
+    patch_name_parser.add_argument("current_name", help=f"Existing {display_name} name to replace.")
+    patch_name_parser.add_argument("replacement", help=f"New {display_name} name.")
+    patch_name_parser.add_argument(
+        "--mode",
+        choices=["strict", "liberal"],
+        default="strict",
+        help="Strict is the default conservative mode. Liberal may rewrite unsafe references in place.",
+    )
+    _add_write_args(patch_name_parser)
+
+    if allow_stat:
+        patch_stat_parser = patch_subparsers.add_parser(
+            "stat",
+            help=f"Reserved future stat-edit command for {display_name} entities.",
+        )
+        patch_stat_parser.add_argument("stat_name", help="Stat name to edit.")
+        patch_stat_parser.add_argument("target_name", help=f"Existing {display_name} name to modify.")
+        patch_stat_parser.add_argument("value", help="Replacement numeric value or text value.")
+        _add_write_args(patch_stat_parser)
+
+
+def _entity_patch_is_progress_command(args: argparse.Namespace) -> bool:
+    """Return True when an entity command should display progress."""
+
+    return args.command in {"character", "class", "enemy", "item", "npc"} and getattr(args, "action", None) == "patch" and getattr(args, "target", None) == "name"
+
+
+def _run_entity_name_patch(
+    *,
+    entity: str,
+    data: bytes,
+    rom_path: Path,
+    args: argparse.Namespace,
+    progress_callback: Callable[[float, str], None] | None,
+) -> list[str]:
+    """Dispatch a tree-style entity rename command."""
+
+    patchers = {
+        "character": run_patch_character_name,
+        "class": run_patch_class_name,
+        "enemy": run_patch_enemy_name,
+        "item": run_patch_item_name,
+        "npc": run_patch_npc_name,
+    }
+    return patchers[entity](
+        data=data,
+        rom_path=rom_path,
+        current_name=args.current_name,
+        replacement_name=args.replacement,
+        mode=args.mode,
+        output=args.output,
+        overwrite=args.overwrite,
+        in_place=args.in_place,
+        progress_callback=progress_callback,
+    )
+
+
+def _run_entity_name_list(
+    *,
+    entity: str,
+    data: bytes,
+    args: argparse.Namespace,
+) -> int:
+    """Dispatch a tree-style entity list command."""
+
+    listers = {
+        "character": run_list_character_names,
+        "class": run_list_class_names,
+        "enemy": run_list_enemy_names,
+        "item": run_list_item_names,
+        "npc": run_list_npc_names,
+    }
+    return 0 if listers[entity](data, args.contains, args.limit) else 1
+
+
+def _run_entity_name_export(
+    *,
+    entity: str,
+    data: bytes,
+    args: argparse.Namespace,
+) -> None:
+    """Dispatch a tree-style entity export command."""
+
+    exporters = {
+        "character": run_export_character_name_map,
+        "class": run_export_class_name_map,
+        "enemy": run_export_enemy_name_map,
+        "item": run_export_item_name_map,
+        "npc": run_export_npc_name_map,
+    }
+    exporters[entity](data, args.output)
 
 
 def search_rotdd(data: bytes, term: str) -> int:
@@ -245,6 +609,35 @@ def run_export_text_surface_map(
     print(f"Wrote {len(rows)} rows to {output_path}")
 
 
+def run_export_text_surface_corpus(
+    data: bytes,
+    min_len: int,
+    output: Path,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> None:
+    """Export the broad dialogue-like surface corpus to CSV."""
+
+    rows = export_text_surface_corpus(data=data, min_len=min_len, progress_callback=progress_callback)
+    output_path = output if output.is_absolute() else (REPO_ROOT / output)
+    write_text_surface_csv(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def run_export_text_surface_template(
+    input_path: Path,
+    surface_type: str,
+    output: Path,
+) -> None:
+    """Export a two-column text-surface template filtered by type."""
+
+    source_path = input_path if input_path.is_absolute() else (REPO_ROOT / input_path)
+    rows = read_text_surface_csv(source_path)
+    template_rows = export_text_surface_template_rows(rows, surface_type)
+    output_path = output if output.is_absolute() else (REPO_ROOT / output)
+    write_text_surface_template_csv(template_rows, output_path)
+    print(f"Wrote {len(template_rows)} rows to {output_path}")
+
+
 def run_list_character_names(data: bytes, contains: str | None, limit: int | None) -> int:
     """List canonical character names in a compact terminal-friendly format."""
     rows = export_character_name_map(data)
@@ -263,6 +656,52 @@ def run_list_character_names(data: bytes, contains: str | None, limit: int | Non
         )
 
     return len(rows)
+
+
+def run_patch_text_surface_template(
+    data: bytes,
+    rom_path: Path,
+    input_path: Path,
+    corpus_path: Path,
+    output: Path | None,
+    overwrite: bool,
+    in_place: bool,
+    mode: str,
+    refs_mode: str | None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
+    """Patch every changed row in a two-column text-surface template CSV."""
+
+    template_path = input_path if input_path.is_absolute() else (REPO_ROOT / input_path)
+    output_path = None
+    if output is not None:
+        output_path = output if output.is_absolute() else (REPO_ROOT / output)
+
+    changed_rows, patched_rows, skipped_rows, deferred_messages, final_output_path = patch_text_surface_template_file(
+        data=data,
+        source_path=rom_path,
+        template_path=template_path,
+        corpus_path=corpus_path if corpus_path.is_absolute() else (REPO_ROOT / corpus_path),
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+        mode=mode,
+        rewrite_reference_corpus=refs_mode == "rewrite",
+        progress_callback=progress_callback,
+    )
+
+    messages = [
+        f"Template file: {template_path}",
+        f"Template diffs: {changed_rows}",
+        f"ROM writes: {patched_rows}",
+        f"Skipped rows: {len(skipped_rows)}",
+    ]
+    if skipped_rows:
+        messages.append("Skipped rows:")
+        messages.extend(skipped_rows)
+    messages.extend(deferred_messages)
+    messages.append(f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}")
+    return messages
 
 
 def run_list_enemy_names(data: bytes, contains: str | None, limit: int | None) -> int:
@@ -393,7 +832,8 @@ def run_patch_known_text(
     output: Path | None,
     overwrite: bool,
     in_place: bool,
-) -> None:
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
     """Patch a known text entry and report what changed."""
     output_path = None
     if output is not None:
@@ -410,19 +850,20 @@ def run_patch_known_text(
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        progress_callback=progress_callback,
     )
 
-    print(f"Patched table: {row.table_slug}")
-    print(f"Local index: {row.local_index}")
-    print(f"Original text: {row.decoded_text}")
-    print(f"Replacement: {replacement_text}")
-    print(f"ROM offset: 0x{row.text_rom_offset:08X}")
-    print(f"Pointer-table offset: 0x{row.pointer_table_offset:08X}")
-    print(f"Encoded bytes: {' '.join(f'{byte:02X}' for byte in replacement_bytes)}")
-    if in_place:
-        print(f"Patched source ROM in place: {final_output_path}")
-    else:
-        print(f"Wrote patched ROM: {final_output_path}")
+    messages = [
+        f"Patched table: {row.table_slug}",
+        f"Local index: {row.local_index}",
+        f"Original text: {row.decoded_text}",
+        f"Replacement: {replacement_text}",
+        f"ROM offset: 0x{row.text_rom_offset:08X}",
+        f"Pointer-table offset: 0x{row.pointer_table_offset:08X}",
+        f"Encoded bytes: {' '.join(f'{byte:02X}' for byte in replacement_bytes)}",
+        f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}",
+    ]
+    return messages
 
 
 def run_patch_character_name(
@@ -430,10 +871,12 @@ def run_patch_character_name(
     rom_path: Path,
     current_name: str,
     replacement_name: str,
+    mode: str,
     output: Path | None,
     overwrite: bool,
     in_place: bool,
-) -> None:
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
     """Patch a character name everywhere we can confidently see it."""
     output_path = None
     if output is not None:
@@ -444,31 +887,28 @@ def run_patch_character_name(
         source_path=rom_path,
         current_name=current_name,
         replacement_name=replacement_name,
+        mode=mode,
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        progress_callback=progress_callback,
     )
 
-    print(f"Character name: {row.decoded_name}")
-    print(f"Replacement: {replacement_name}")
-    print(f"Pointer-table offset: 0x{row.pointer_table_offset:08X}")
-    print(f"Original ROM offset: 0x{row.name_rom_offset:08X}")
-    print(f"Patched references: {len(patched_rows)}")
-    print(f"Skipped references: {len(skipped_rows)}")
+    messages = [
+        f"Character name: {row.decoded_name}",
+        f"Replacement: {replacement_name}",
+        f"Pointer-table offset: 0x{row.pointer_table_offset:08X}",
+        f"Original ROM offset: 0x{row.name_rom_offset:08X}",
+        f"Patched references: {len(patched_rows)}",
+        f"Skipped references: {len(skipped_rows)}",
+    ]
     if any(ref.source_kind == "canonical_name" for ref in patched_rows):
-        print("Canonical pointer table updated.")
+        messages.append("Canonical pointer table updated.")
     if skipped_rows:
-        print("Skipped rows:")
-        for ref in skipped_rows[:5]:
-            print(
-                f"  {ref.source_kind} "
-                f"rom=0x{ref.rom_offset:08X} "
-                f"src={ref.source_label}[{ref.source_index}]"
-            )
-    if in_place:
-        print(f"Patched source ROM in place: {final_output_path}")
-    else:
-        print(f"Wrote patched ROM: {final_output_path}")
+        messages.append("Skipped rows:")
+        messages.extend(_format_skipped_reference(ref) for ref in skipped_rows)
+    messages.append(f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}")
+    return messages
 
 
 def run_patch_enemy_name(
@@ -476,10 +916,12 @@ def run_patch_enemy_name(
     rom_path: Path,
     current_name: str,
     replacement_name: str,
+    mode: str,
     output: Path | None,
     overwrite: bool,
     in_place: bool,
-) -> None:
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
     """Patch an enemy-type name everywhere we can confidently see it."""
     output_path = None
     if output is not None:
@@ -490,27 +932,24 @@ def run_patch_enemy_name(
         source_path=rom_path,
         current_name=current_name,
         replacement_name=replacement_name,
+        mode=mode,
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        progress_callback=progress_callback,
     )
 
-    print(f"Enemy name: {row.decoded_text}")
-    print(f"Replacement: {replacement_name}")
-    print(f"Patched references: {len(patched_rows)}")
-    print(f"Skipped references: {len(skipped_rows)}")
+    messages = [
+        f"Enemy name: {row.decoded_text}",
+        f"Replacement: {replacement_name}",
+        f"Patched references: {len(patched_rows)}",
+        f"Skipped references: {len(skipped_rows)}",
+    ]
     if skipped_rows:
-        print("Skipped rows:")
-        for ref in skipped_rows[:5]:
-            print(
-                f"  {ref.source_kind} "
-                f"rom=0x{ref.rom_offset:08X} "
-                f"src={ref.source_label}[{ref.source_index}]"
-            )
-    if in_place:
-        print(f"Patched source ROM in place: {final_output_path}")
-    else:
-        print(f"Wrote patched ROM: {final_output_path}")
+        messages.append("Skipped rows:")
+        messages.extend(_format_skipped_reference(ref) for ref in skipped_rows)
+    messages.append(f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}")
+    return messages
 
 
 def run_patch_item_name(
@@ -518,10 +957,12 @@ def run_patch_item_name(
     rom_path: Path,
     current_name: str,
     replacement_name: str,
+    mode: str,
     output: Path | None,
     overwrite: bool,
     in_place: bool,
-) -> None:
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
     """Patch an item name everywhere we can confidently see it."""
     output_path = None
     if output is not None:
@@ -532,27 +973,24 @@ def run_patch_item_name(
         source_path=rom_path,
         current_name=current_name,
         replacement_name=replacement_name,
+        mode=mode,
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        progress_callback=progress_callback,
     )
 
-    print(f"Item name: {row.decoded_text}")
-    print(f"Replacement: {replacement_name}")
-    print(f"Patched references: {len(patched_rows)}")
-    print(f"Skipped references: {len(skipped_rows)}")
+    messages = [
+        f"Item name: {row.decoded_text}",
+        f"Replacement: {replacement_name}",
+        f"Patched references: {len(patched_rows)}",
+        f"Skipped references: {len(skipped_rows)}",
+    ]
     if skipped_rows:
-        print("Skipped rows:")
-        for ref in skipped_rows[:5]:
-            print(
-                f"  {ref.source_kind} "
-                f"rom=0x{ref.rom_offset:08X} "
-                f"src={ref.source_label}[{ref.source_index}]"
-            )
-    if in_place:
-        print(f"Patched source ROM in place: {final_output_path}")
-    else:
-        print(f"Wrote patched ROM: {final_output_path}")
+        messages.append("Skipped rows:")
+        messages.extend(_format_skipped_reference(ref) for ref in skipped_rows)
+    messages.append(f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}")
+    return messages
 
 
 def run_patch_npc_name(
@@ -560,10 +998,12 @@ def run_patch_npc_name(
     rom_path: Path,
     current_name: str,
     replacement_name: str,
+    mode: str,
     output: Path | None,
     overwrite: bool,
     in_place: bool,
-) -> None:
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
     """Patch a dialogue-speaker or NPC-style name across dialogue surfaces."""
     output_path = None
     if output is not None:
@@ -574,27 +1014,24 @@ def run_patch_npc_name(
         source_path=rom_path,
         current_name=current_name,
         replacement_name=replacement_name,
+        mode=mode,
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        progress_callback=progress_callback,
     )
 
-    print(f"NPC name: {row.speaker_name}")
-    print(f"Replacement: {replacement_name}")
-    print(f"Patched references: {len(patched_rows)}")
-    print(f"Skipped references: {len(skipped_rows)}")
+    messages = [
+        f"NPC name: {row.speaker_name}",
+        f"Replacement: {replacement_name}",
+        f"Patched references: {len(patched_rows)}",
+        f"Skipped references: {len(skipped_rows)}",
+    ]
     if skipped_rows:
-        print("Skipped rows:")
-        for ref in skipped_rows[:5]:
-            print(
-                f"  {ref.source_kind} "
-                f"rom=0x{ref.rom_offset:08X} "
-                f"src={ref.source_label}[{ref.source_index}]"
-            )
-    if in_place:
-        print(f"Patched source ROM in place: {final_output_path}")
-    else:
-        print(f"Wrote patched ROM: {final_output_path}")
+        messages.append("Skipped rows:")
+        messages.extend(_format_skipped_reference(ref) for ref in skipped_rows)
+    messages.append(f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}")
+    return messages
 
 
 def run_patch_class_name(
@@ -602,10 +1039,12 @@ def run_patch_class_name(
     rom_path: Path,
     current_name: str,
     replacement_name: str,
+    mode: str,
     output: Path | None,
     overwrite: bool,
     in_place: bool,
-) -> None:
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
     """Patch a class name everywhere we can confidently see it."""
     output_path = None
     if output is not None:
@@ -616,27 +1055,24 @@ def run_patch_class_name(
         source_path=rom_path,
         current_name=current_name,
         replacement_name=replacement_name,
+        mode=mode,
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        progress_callback=progress_callback,
     )
 
-    print(f"Class name: {row.decoded_text}")
-    print(f"Replacement: {replacement_name}")
-    print(f"Patched references: {len(patched_rows)}")
-    print(f"Skipped references: {len(skipped_rows)}")
+    messages = [
+        f"Class name: {row.decoded_text}",
+        f"Replacement: {replacement_name}",
+        f"Patched references: {len(patched_rows)}",
+        f"Skipped references: {len(skipped_rows)}",
+    ]
     if skipped_rows:
-        print("Skipped rows:")
-        for ref in skipped_rows[:5]:
-            print(
-                f"  {ref.source_kind} "
-                f"rom=0x{ref.rom_offset:08X} "
-                f"src={ref.source_label}[{ref.source_index}]"
-            )
-    if in_place:
-        print(f"Patched source ROM in place: {final_output_path}")
-    else:
-        print(f"Wrote patched ROM: {final_output_path}")
+        messages.append("Skipped rows:")
+        messages.extend(_format_skipped_reference(ref) for ref in skipped_rows)
+    messages.append(f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}")
+    return messages
 
 
 def run_patch_text_at_offset(
@@ -647,7 +1083,8 @@ def run_patch_text_at_offset(
     output: Path | None,
     overwrite: bool,
     in_place: bool,
-) -> None:
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
     """Patch an arbitrary ROM offset using a simple address + text form."""
     output_path = None
     if output is not None:
@@ -661,16 +1098,16 @@ def run_patch_text_at_offset(
         output_path=output_path,
         overwrite=overwrite,
         in_place=in_place,
+        progress_callback=progress_callback,
     )
 
-    print(f"ROM offset: 0x{rom_offset:08X}")
-    print(f"Original text: {original_text}")
-    print(f"Replacement: {replacement_text}")
-    print(f"Encoded bytes: {' '.join(f'{byte:02X}' for byte in replacement_bytes)}")
-    if in_place:
-        print(f"Patched source ROM in place: {final_output_path}")
-    else:
-        print(f"Wrote patched ROM: {final_output_path}")
+    return [
+        f"ROM offset: 0x{rom_offset:08X}",
+        f"Original text: {original_text}",
+        f"Replacement: {replacement_text}",
+        f"Encoded bytes: {' '.join(f'{byte:02X}' for byte in replacement_bytes)}",
+        f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}",
+    ]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -765,161 +1202,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="How to decode the pointed data. Default: rotdd",
     )
 
-    character_export_parser = subparsers.add_parser(
-        "export-character-name-map",
-        help="Export the canonical character-name pointer table to a CSV artifact.",
-    )
-    character_export_parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("research/raw/character-names.csv"),
-        help="Output CSV path, relative to the repository root by default.",
-    )
-
-    class_export_parser = subparsers.add_parser(
-        "export-class-name-map",
-        help="Export the confirmed class-name table to a CSV artifact.",
-    )
-    class_export_parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("research/raw/class-names.csv"),
-        help="Output CSV path, relative to the repository root by default.",
-    )
-
-    enemy_export_parser = subparsers.add_parser(
-        "export-enemy-name-map",
-        help="Export the confirmed enemy-type name table to a CSV artifact.",
-    )
-    enemy_export_parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("research/raw/enemy-names.csv"),
-        help="Output CSV path, relative to the repository root by default.",
-    )
-
-    item_export_parser = subparsers.add_parser(
-        "export-item-name-map",
-        help="Export the confirmed item-name table to a CSV artifact.",
-    )
-    item_export_parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("research/raw/item-names.csv"),
-        help="Output CSV path, relative to the repository root by default.",
-    )
-
-    npc_export_parser = subparsers.add_parser(
-        "export-npc-name-map",
-        help="Export dialogue speaker prefixes as a browseable NPC-style CSV.",
-    )
-    npc_export_parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("research/raw/npc-names.csv"),
-        help="Output CSV path, relative to the repository root by default.",
-    )
-
-    surface_export_parser = subparsers.add_parser(
-        "export-text-surface-map",
-        help="Export a contiguous text surface to a CSV artifact.",
-    )
-    surface_export_parser.add_argument("--start", type=parse_int, required=True, help="Start ROM offset.")
-    surface_export_parser.add_argument("--end", type=parse_int, required=True, help="End ROM offset.")
-    surface_export_parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("research/raw/text-surfaces.csv"),
-        help="Output CSV path, relative to the repository root by default.",
-    )
-
-    surface_corpus_parser = subparsers.add_parser(
-        "export-text-surface-corpus",
-        help="Export a whole-ROM corpus of dialogue-like ROTDD text runs.",
-    )
-    surface_corpus_parser.add_argument(
-        "--min-len",
-        type=int,
-        default=24,
-        help="Minimum run length in bytes before a candidate is kept.",
-    )
-    surface_corpus_parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("research/raw/text-surfaces.csv"),
-        help="Output CSV path, relative to the repository root by default.",
-    )
-
-    character_list_parser = subparsers.add_parser(
-        "list-character-names",
-        help="List the canonical character names from the pointer table.",
-    )
-    character_list_parser.add_argument(
-        "--contains",
-        help="Only list names whose decoded text contains this substring.",
-    )
-    character_list_parser.add_argument(
-        "--limit",
-        type=int,
-        help="Maximum number of rows to print.",
-    )
-
-    class_list_parser = subparsers.add_parser(
-        "list-class-names",
-        help="List the confirmed class names from the current slice.",
-    )
-    class_list_parser.add_argument(
-        "--contains",
-        help="Only list names whose decoded text contains this substring.",
-    )
-    class_list_parser.add_argument(
-        "--limit",
-        type=int,
-        help="Maximum number of rows to print.",
-    )
-
-    enemy_list_parser = subparsers.add_parser(
-        "list-enemy-names",
-        help="List the confirmed enemy-type names from the current table.",
-    )
-    enemy_list_parser.add_argument(
-        "--contains",
-        help="Only list names whose decoded text contains this substring.",
-    )
-    enemy_list_parser.add_argument(
-        "--limit",
-        type=int,
-        help="Maximum number of rows to print.",
-    )
-
-    item_list_parser = subparsers.add_parser(
-        "list-item-names",
-        help="List the confirmed item names from the current table.",
-    )
-    item_list_parser.add_argument(
-        "--contains",
-        help="Only list names whose decoded text contains this substring.",
-    )
-    item_list_parser.add_argument(
-        "--limit",
-        type=int,
-        help="Maximum number of rows to print.",
-    )
-
-    npc_list_parser = subparsers.add_parser(
-        "list-npc-names",
-        help="List dialogue-speaker prefixes extracted from the corpus.",
-    )
-    npc_list_parser.add_argument(
-        "--contains",
-        help="Only list names whose decoded text contains this substring.",
-    )
-    npc_list_parser.add_argument(
-        "--limit",
-        type=int,
-        help="Maximum number of rows to print.",
-    )
-
     list_parser = subparsers.add_parser(
         "list-known-text",
         help="List mapped rows from the current known ROTDD text tables.",
@@ -994,254 +1276,190 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write directly into the source ROM. Unsafe.",
     )
 
-    character_patch_parser = subparsers.add_parser(
-        "patch-character-name",
-        help="Case-sensitive global rename across the canonical name table and matched text references.",
+    surface_corpus_parser = subparsers.add_parser(
+        "export-text-surface-corpus",
+        help="Export the broad dialogue-like surface corpus to CSV.",
     )
-    character_patch_parser.add_argument("current_name", help="Existing character name to replace.")
-    character_patch_parser.add_argument("replacement", help="New character name.")
-    character_patch_parser.add_argument(
+    surface_corpus_parser.add_argument(
         "--output",
         type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+        default=Path("research/raw/text-surfaces.csv"),
+        help="Output CSV path, relative to the repository root by default.",
     )
-    character_patch_parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
-    )
-    character_patch_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
+    surface_corpus_parser.add_argument(
+        "--min-len",
+        type=int,
+        default=24,
+        help="Minimum decoded text length before a row is kept in the corpus.",
     )
 
-    class_patch_parser = subparsers.add_parser(
-        "patch-class-name",
-        help="Case-sensitive global rename across the class table and matched text references.",
+    surface_map_parser = subparsers.add_parser(
+        "export-text-surface-map",
+        help="Export a contiguous text surface to CSV.",
     )
-    class_patch_parser.add_argument("current_name", help="Existing class name to replace.")
-    class_patch_parser.add_argument("replacement", help="New class name.")
-    class_patch_parser.add_argument(
+    surface_map_parser.add_argument(
+        "--start",
+        type=parse_int,
+        required=True,
+        help="Start ROM offset for the excerpt.",
+    )
+    surface_map_parser.add_argument(
+        "--end",
+        type=parse_int,
+        required=True,
+        help="End ROM offset for the excerpt.",
+    )
+    surface_map_parser.add_argument(
         "--output",
         type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
-    )
-    class_patch_parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
-    )
-    class_patch_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
+        default=Path("research/raw/text-surfaces.csv"),
+        help="Output CSV path, relative to the repository root by default.",
     )
 
-    enemy_patch_parser = subparsers.add_parser(
-        "patch-enemy-name",
-        help="Case-sensitive global rename across the enemy-type name table and matched text references.",
+    text_surface_parser = subparsers.add_parser(
+        "text-surface",
+        help="Text-surface template exports and bulk patching actions.",
     )
-    enemy_patch_parser.add_argument("current_name", help="Existing enemy name to replace.")
-    enemy_patch_parser.add_argument("replacement", help="New enemy name.")
-    enemy_patch_parser.add_argument(
+    text_surface_subparsers = text_surface_parser.add_subparsers(dest="action", required=True)
+
+    text_surface_export_parser = text_surface_subparsers.add_parser(
+        "export",
+        help="Export text-surface templates from the current corpus CSV.",
+    )
+    text_surface_export_subparsers = text_surface_export_parser.add_subparsers(dest="target", required=True)
+    text_surface_template_export_parser = text_surface_export_subparsers.add_parser(
+        "template",
+        help="Export one surface type as a two-column template CSV.",
+    )
+    text_surface_template_export_parser.add_argument(
+        "--input",
+        type=Path,
+        default=Path("research/raw/text-surfaces.csv"),
+        help="Source text-surfaces CSV path, relative to the repository root by default.",
+    )
+    text_surface_template_export_parser.add_argument(
+        "--type",
+        required=True,
+        help="Surface type label to export.",
+    )
+    text_surface_template_export_parser.add_argument(
         "--output",
         type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
-    )
-    enemy_patch_parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
-    )
-    enemy_patch_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
+        help="Output CSV path. Defaults to ignore/temp/text-surfaces.<type>.csv.",
     )
 
-    item_patch_parser = subparsers.add_parser(
-        "patch-item-name",
-        help="Case-sensitive global rename across the item table and matched text references.",
+    text_surface_patch_parser = text_surface_subparsers.add_parser(
+        "patch",
+        help="Patch text-surface template rows back into a copied ROM.",
     )
-    item_patch_parser.add_argument("current_name", help="Existing item name to replace.")
-    item_patch_parser.add_argument("replacement", help="New item name.")
-    item_patch_parser.add_argument(
-        "--output",
+    text_surface_patch_subparsers = text_surface_patch_parser.add_subparsers(dest="target", required=True)
+    text_surface_patch_file_parser = text_surface_patch_subparsers.add_parser(
+        "file",
+        help="Patch a two-column text-surface template CSV.",
+    )
+    text_surface_patch_file_parser.add_argument(
+        "--input",
         type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+        required=True,
+        help="Template CSV path with rom_offset and decoded_text columns.",
     )
-    item_patch_parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
-    )
-    item_patch_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
-    )
-
-    npc_patch_parser = subparsers.add_parser(
-        "patch-npc-name",
-        help="Case-sensitive global rename across dialogue speaker prefixes and matched text references.",
-    )
-    npc_patch_parser.add_argument("current_name", help="Existing NPC or speaker name to replace.")
-    npc_patch_parser.add_argument("replacement", help="New NPC or speaker name.")
-    npc_patch_parser.add_argument(
-        "--output",
+    text_surface_patch_file_parser.add_argument(
+        "--corpus",
         type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+        default=Path("research/raw/text-surfaces.csv"),
+        help="Current text-surfaces CSV used to infer the source codec for each offset.",
     )
-    npc_patch_parser.add_argument(
-        "--overwrite",
+    text_surface_patch_file_parser.add_argument(
+        "--refs",
+        choices=["rewrite", "keep"],
+        help="Rewrite the reference corpus CSV after patching, or keep it unchanged.",
+    )
+    text_surface_patch_file_parser.add_argument(
+        "--clear-refs-preference",
         action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
+        help="Delete the saved local ref-file preference before running.",
     )
-    npc_patch_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
+    text_surface_patch_file_parser.add_argument(
+        "--mode",
+        choices=["strict", "liberal"],
+        default="strict",
+        help="Strict is the default conservative mode. Liberal may rewrite unsafe references in place.",
     )
+    _add_write_args(text_surface_patch_file_parser)
 
     character_parser = subparsers.add_parser(
         "character",
         help="Character-focused actions using a name + action command shape.",
     )
-    character_parser.add_argument("name", help="Character name to modify.")
-    character_subparsers = character_parser.add_subparsers(dest="character_action", required=True)
-
-    character_rename_parser = character_subparsers.add_parser(
-        "rename",
-        help="Rename one character everywhere we can confidently see the old name.",
-    )
-    character_rename_parser.add_argument("replacement", help="New character name.")
-    character_rename_parser.add_argument(
-        "--output",
-        type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
-    )
-    character_rename_parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
-    )
-    character_rename_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
+    _add_entity_tree_parser(
+        character_parser,
+        display_name="character",
+        export_output=Path("research/raw/character-names.csv"),
+        list_help="List canonical character names and their pointer-table rows.",
+        export_help="Export the canonical character-name pointer table to a CSV artifact.",
+        patch_help="Character name actions.",
+        patch_help_suffix="Rename one character everywhere we can confidently see the old name.",
+        allow_stat=True,
     )
 
     class_parser = subparsers.add_parser(
         "class",
         help="Class-focused actions using a name + action command shape.",
     )
-    class_parser.add_argument("name", help="Class name to modify.")
-    class_subparsers = class_parser.add_subparsers(dest="class_action", required=True)
-
-    class_rename_parser = class_subparsers.add_parser(
-        "rename",
-        help="Rename one class label everywhere we can confidently see the old name.",
-    )
-    class_rename_parser.add_argument("replacement", help="New class name.")
-    class_rename_parser.add_argument(
-        "--output",
-        type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
-    )
-    class_rename_parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
-    )
-    class_rename_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
-    )
-
-    item_parser = subparsers.add_parser(
-        "item",
-        help="Item-focused actions using a name + action command shape.",
-    )
-    item_parser.add_argument("name", help="Item name to modify.")
-    item_subparsers = item_parser.add_subparsers(dest="item_action", required=True)
-
-    item_rename_parser = item_subparsers.add_parser(
-        "rename",
-        help="Rename one item label everywhere we can confidently see the old name.",
-    )
-    item_rename_parser.add_argument("replacement", help="New item name.")
-    item_rename_parser.add_argument(
-        "--output",
-        type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
-    )
-    item_rename_parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
-    )
-    item_rename_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
-    )
-
-    npc_parser = subparsers.add_parser(
-        "npc",
-        help="NPC/dialogue-speaker actions using a name + action command shape.",
-    )
-    npc_parser.add_argument("name", help="NPC or speaker name to modify.")
-    npc_subparsers = npc_parser.add_subparsers(dest="npc_action", required=True)
-
-    npc_rename_parser = npc_subparsers.add_parser(
-        "rename",
-        help="Rename one NPC or speaker name across dialogue surfaces.",
-    )
-    npc_rename_parser.add_argument("replacement", help="New NPC or speaker name.")
-    npc_rename_parser.add_argument(
-        "--output",
-        type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
-    )
-    npc_rename_parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
-    )
-    npc_rename_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
+    _add_entity_tree_parser(
+        class_parser,
+        display_name="class",
+        export_output=Path("research/raw/class-names.csv"),
+        list_help="List confirmed class names from the current slice.",
+        export_help="Export the confirmed class-name slice to a CSV artifact.",
+        patch_help="Class name actions.",
+        patch_help_suffix="Rename one class label everywhere we can confidently see the old name.",
+        allow_stat=True,
     )
 
     enemy_parser = subparsers.add_parser(
         "enemy",
         help="Enemy-focused actions using a name + action command shape.",
     )
-    enemy_parser.add_argument("name", help="Enemy name to modify.")
-    enemy_subparsers = enemy_parser.add_subparsers(dest="enemy_action", required=True)
+    _add_entity_tree_parser(
+        enemy_parser,
+        display_name="enemy",
+        export_output=Path("research/raw/enemy-names.csv"),
+        list_help="List confirmed enemy names from the current slice.",
+        export_help="Export the confirmed enemy-name slice to a CSV artifact.",
+        patch_help="Enemy name actions.",
+        patch_help_suffix="Rename one enemy label everywhere we can confidently see the old name.",
+        allow_stat=True,
+    )
 
-    enemy_rename_parser = enemy_subparsers.add_parser(
-        "rename",
-        help="Rename one enemy-type label everywhere we can confidently see the old name.",
+    item_parser = subparsers.add_parser(
+        "item",
+        help="Item-focused actions using a name + action command shape.",
     )
-    enemy_rename_parser.add_argument("replacement", help="New enemy name.")
-    enemy_rename_parser.add_argument(
-        "--output",
-        type=Path,
-        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    _add_entity_tree_parser(
+        item_parser,
+        display_name="item",
+        export_output=Path("research/raw/item-names.csv"),
+        list_help="List confirmed item names from the current table.",
+        export_help="Export the confirmed item-name table to a CSV artifact.",
+        patch_help="Item name actions.",
+        patch_help_suffix="Rename one item label everywhere we can confidently see the old name.",
+        allow_stat=True,
     )
-    enemy_rename_parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow the output file to be overwritten if it already exists.",
+
+    npc_parser = subparsers.add_parser(
+        "npc",
+        help="NPC/dialogue-speaker actions using a name + action command shape.",
     )
-    enemy_rename_parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Write directly into the source ROM. Unsafe.",
+    _add_entity_tree_parser(
+        npc_parser,
+        display_name="npc",
+        export_output=Path("research/raw/npc-names.csv"),
+        list_help="List dialogue-speaker prefixes extracted from the corpus.",
+        export_help="Export dialogue speaker prefixes as a browseable NPC-style CSV.",
+        patch_help="NPC name actions.",
+        patch_help_suffix="Rename one NPC or speaker name across dialogue surfaces.",
+        allow_stat=False,
     )
 
     patch_offset_parser = subparsers.add_parser(
@@ -1283,222 +1501,139 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     """Dispatch the selected subcommand."""
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(sys.argv[1:])
 
-    if args.command == "encode-rotdd":
-        print_rotdd_encoding(args.term)
-        return 0
+    progress_commands = {
+        "export-text-surface-corpus",
+        "patch-known-text",
+        "patch-text-at-offset",
+    }
+    progress_bar = ProgressBar() if args.command in progress_commands or _entity_patch_is_progress_command(args) or (args.command == "text-surface" and getattr(args, "action", None) == "patch" and getattr(args, "target", None) == "file") else None
+    progress_callback = progress_bar.update if progress_bar is not None else None
+    post_messages: list[str] = []
 
-    rom_path = resolve_rom_path(args.rom)
-    data = load_rom(rom_path)
+    try:
+        if args.command == "encode-rotdd":
+            print_rotdd_encoding(args.term)
+            return 0
+        if args.command == "text-surface" and args.action == "export" and args.target == "template":
+            output = args.output or Path(f"ignore/temp/text-surfaces.{args.type}.csv")
+            run_export_text_surface_template(
+                input_path=args.input,
+                surface_type=args.type,
+                output=output,
+            )
+            return 0
 
-    if args.command == "search-term":
-        return 0 if search_term(data, args.term, args.encoding) else 1
-    if args.command == "search-rotdd":
-        return 0 if search_rotdd(data, args.term) else 1
-    if args.command == "dump-strings":
-        return 0 if dump_strings(data, args.start, args.end, args.min_len, args.contains) else 1
-    if args.command == "dump-rotdd":
-        return 0 if dump_rotdd(data, args.start, args.end, args.min_len, args.contains) else 1
-    if args.command == "scan-rotdd-runs":
-        return 0 if scan_rotdd_candidates(data, args.start, args.end, args.min_len) else 1
-    if args.command == "find-pointer":
-        return 0 if find_pointer(data, args.offset, args.base) else 1
-    if args.command == "dump-pointer-table":
-        dump_pointer_table(data, args.offset, args.count, args.base, args.codec)
-        return 0
-    if args.command == "export-character-name-map":
-        run_export_character_name_map(data, args.output)
-        return 0
-    if args.command == "export-class-name-map":
-        run_export_class_name_map(data, args.output)
-        return 0
-    if args.command == "export-enemy-name-map":
-        run_export_enemy_name_map(data, args.output)
-        return 0
-    if args.command == "export-item-name-map":
-        run_export_item_name_map(data, args.output)
-        return 0
-    if args.command == "export-npc-name-map":
-        run_export_npc_name_map(data, args.output)
-        return 0
-    if args.command == "export-text-surface-map":
-        run_export_text_surface_map(
-            data=data,
-            start=args.start,
-            end=args.end,
-            output=args.output,
-        )
-        return 0
-    if args.command == "export-text-surface-corpus":
-        rows = export_text_surface_corpus(data=data, min_len=args.min_len)
-        output_path = args.output if args.output.is_absolute() else (REPO_ROOT / args.output)
-        write_text_surface_csv(rows, output_path)
-        print(f"Wrote {len(rows)} rows to {output_path}")
-        return 0
-    if args.command == "list-character-names":
-        return 0 if run_list_character_names(data, args.contains, args.limit) else 1
-    if args.command == "list-class-names":
-        return 0 if run_list_class_names(data, args.contains, args.limit) else 1
-    if args.command == "list-enemy-names":
-        return 0 if run_list_enemy_names(data, args.contains, args.limit) else 1
-    if args.command == "list-item-names":
-        return 0 if run_list_item_names(data, args.contains, args.limit) else 1
-    if args.command == "list-npc-names":
-        return 0 if run_list_npc_names(data, args.contains, args.limit) else 1
-    if args.command == "list-known-text":
-        return 0 if run_list_known_text(data, args.table, args.category, args.contains, args.limit, args.show_notes) else 1
-    if args.command == "patch-known-text":
-        run_patch_known_text(
-            data=data,
-            rom_path=rom_path,
-            table_slug=args.table,
-            local_index=args.index,
-            match_text=args.match_text,
-            occurrence=args.occurrence,
-            replacement_text=args.replacement,
-            output=args.output,
-            overwrite=args.overwrite,
-            in_place=args.in_place,
-        )
-        return 0
-    if args.command == "patch-character-name":
-        run_patch_character_name(
-            data=data,
-            rom_path=rom_path,
-            current_name=args.current_name,
-            replacement_name=args.replacement,
-            output=args.output,
-            overwrite=args.overwrite,
-            in_place=args.in_place,
-        )
-        return 0
-    if args.command == "patch-class-name":
-        run_patch_class_name(
-            data=data,
-            rom_path=rom_path,
-            current_name=args.current_name,
-            replacement_name=args.replacement,
-            output=args.output,
-            overwrite=args.overwrite,
-            in_place=args.in_place,
-        )
-        return 0
-    if args.command == "patch-enemy-name":
-        run_patch_enemy_name(
-            data=data,
-            rom_path=rom_path,
-            current_name=args.current_name,
-            replacement_name=args.replacement,
-            output=args.output,
-            overwrite=args.overwrite,
-            in_place=args.in_place,
-        )
-        return 0
-    if args.command == "patch-item-name":
-        run_patch_item_name(
-            data=data,
-            rom_path=rom_path,
-            current_name=args.current_name,
-            replacement_name=args.replacement,
-            output=args.output,
-            overwrite=args.overwrite,
-            in_place=args.in_place,
-        )
-        return 0
-    if args.command == "patch-npc-name":
-        run_patch_npc_name(
-            data=data,
-            rom_path=rom_path,
-            current_name=args.current_name,
-            replacement_name=args.replacement,
-            output=args.output,
-            overwrite=args.overwrite,
-            in_place=args.in_place,
-        )
-        return 0
-    if args.command == "character":
-        if args.character_action == "rename":
-            run_patch_character_name(
-                data=data,
-                rom_path=rom_path,
-                current_name=args.name,
-                replacement_name=args.replacement,
-                output=args.output,
-                overwrite=args.overwrite,
-                in_place=args.in_place,
-            )
-            return 0
-        parser.error(f"Unhandled character action: {args.character_action}")
-    if args.command == "class":
-        if args.class_action == "rename":
-            run_patch_class_name(
-                data=data,
-                rom_path=rom_path,
-                current_name=args.name,
-                replacement_name=args.replacement,
-                output=args.output,
-                overwrite=args.overwrite,
-                in_place=args.in_place,
-            )
-            return 0
-        parser.error(f"Unhandled class action: {args.class_action}")
-    if args.command == "item":
-        if args.item_action == "rename":
-            run_patch_item_name(
-                data=data,
-                rom_path=rom_path,
-                current_name=args.name,
-                replacement_name=args.replacement,
-                output=args.output,
-                overwrite=args.overwrite,
-                in_place=args.in_place,
-            )
-            return 0
-        parser.error(f"Unhandled item action: {args.item_action}")
-    if args.command == "npc":
-        if args.npc_action == "rename":
-            run_patch_npc_name(
-                data=data,
-                rom_path=rom_path,
-                current_name=args.name,
-                replacement_name=args.replacement,
-                output=args.output,
-                overwrite=args.overwrite,
-                in_place=args.in_place,
-            )
-            return 0
-        parser.error(f"Unhandled npc action: {args.npc_action}")
-    if args.command == "enemy":
-        if args.enemy_action == "rename":
-            run_patch_enemy_name(
-                data=data,
-                rom_path=rom_path,
-                current_name=args.name,
-                replacement_name=args.replacement,
-                output=args.output,
-                overwrite=args.overwrite,
-                in_place=args.in_place,
-            )
-            return 0
-        parser.error(f"Unhandled enemy action: {args.enemy_action}")
-    if args.command == "patch-text-at-offset":
-        run_patch_text_at_offset(
-            data=data,
-            rom_path=rom_path,
-            rom_offset=args.offset,
-            replacement_text=args.replacement,
-            output=args.output,
-            overwrite=args.overwrite,
-            in_place=args.in_place,
-        )
-        return 0
-    if args.command == "peek":
-        peek(data, args.offset, args.length)
-        return 0
+        rom_path = resolve_rom_path(args.rom)
+        data = load_rom(rom_path)
 
-    parser.error(f"Unhandled command: {args.command}")
-    return 2
+        if args.command == "search-term":
+            return 0 if search_term(data, args.term, args.encoding) else 1
+        if args.command == "search-rotdd":
+            return 0 if search_rotdd(data, args.term) else 1
+        if args.command == "dump-strings":
+            return 0 if dump_strings(data, args.start, args.end, args.min_len, args.contains) else 1
+        if args.command == "dump-rotdd":
+            return 0 if dump_rotdd(data, args.start, args.end, args.min_len, args.contains) else 1
+        if args.command == "scan-rotdd-runs":
+            return 0 if scan_rotdd_candidates(data, args.start, args.end, args.min_len) else 1
+        if args.command == "find-pointer":
+            return 0 if find_pointer(data, args.offset, args.base) else 1
+        if args.command == "dump-pointer-table":
+            dump_pointer_table(data, args.offset, args.count, args.base, args.codec)
+            return 0
+        if args.command == "export-text-surface-map":
+            run_export_text_surface_map(
+                data=data,
+                start=args.start,
+                end=args.end,
+                output=args.output,
+            )
+            return 0
+        if args.command == "export-text-surface-corpus":
+            run_export_text_surface_corpus(data, args.min_len, args.output, progress_callback)
+            return 0
+        if args.command == "text-surface":
+            if args.action == "patch" and args.target == "file":
+                if args.clear_refs_preference:
+                    clear_refs_mode_preference()
+                refs_mode = choose_refs_mode(args.refs)
+                post_messages.extend(run_patch_text_surface_template(
+                    data=data,
+                    rom_path=rom_path,
+                    input_path=args.input,
+                    corpus_path=args.corpus,
+                    output=args.output,
+                    overwrite=args.overwrite,
+                    in_place=args.in_place,
+                    mode=args.mode,
+                    refs_mode=refs_mode,
+                    progress_callback=progress_callback,
+                ))
+                post_messages.append(fresh_boot_notice())
+                return 0
+            parser.error(f"Unhandled text-surface action: {args.action}/{getattr(args, 'target', None)}")
+        if args.command == "list-known-text":
+            return 0 if run_list_known_text(data, args.table, args.category, args.contains, args.limit, args.show_notes) else 1
+        if args.command == "patch-known-text":
+            post_messages.extend(run_patch_known_text(
+                data=data,
+                rom_path=rom_path,
+                table_slug=args.table,
+                local_index=args.index,
+                match_text=args.match_text,
+                occurrence=args.occurrence,
+                replacement_text=args.replacement,
+                output=args.output,
+                overwrite=args.overwrite,
+                in_place=args.in_place,
+                progress_callback=progress_callback,
+            ))
+            post_messages.append(fresh_boot_notice())
+            return 0
+        if args.command in {"character", "class", "enemy", "item", "npc"}:
+            if args.action == "export" and args.target == "map":
+                _run_entity_name_export(entity=args.command, data=data, args=args)
+                return 0
+            if args.action == "list" and args.target == "names":
+                return _run_entity_name_list(entity=args.command, data=data, args=args)
+            if args.action == "patch" and args.target == "name":
+                post_messages.extend(_run_entity_name_patch(
+                    entity=args.command,
+                    data=data,
+                    rom_path=rom_path,
+                    args=args,
+                    progress_callback=progress_callback,
+                ))
+                post_messages.append(fresh_boot_notice())
+                return 0
+            if args.action == "patch" and args.target == "stat":
+                parser.error("Stat editing is not implemented yet.")
+            parser.error(f"Unhandled {args.command} action: {args.action}/{getattr(args, 'target', None)}")
+        if args.command == "patch-text-at-offset":
+            post_messages.extend(run_patch_text_at_offset(
+                data=data,
+                rom_path=rom_path,
+                rom_offset=args.offset,
+                replacement_text=args.replacement,
+                output=args.output,
+                overwrite=args.overwrite,
+                in_place=args.in_place,
+                progress_callback=progress_callback,
+            ))
+            post_messages.append(fresh_boot_notice())
+            return 0
+        if args.command == "peek":
+            peek(data, args.offset, args.length)
+            return 0
+
+        parser.error(f"Unhandled command: {args.command}")
+        return 2
+    finally:
+        if progress_bar is not None:
+            progress_bar.finish()
+        _emit_messages(post_messages)
 
 
 def run() -> int:

@@ -47,6 +47,15 @@ class TextSurfaceRow:
     row_index: int
     source_kind: str
     rom_offset: int
+    surface_type: str
+    decoded_text: str
+
+
+@dataclass(frozen=True)
+class TextSurfaceTemplateRow:
+    """One editable row from a text-surface template CSV."""
+
+    rom_offset: int
     decoded_text: str
 
 
@@ -72,6 +81,7 @@ class CharacterNameReferenceRow:
     source_index: int
     rom_offset: int
     decoded_text: str
+    skip_reason: str = ""
 
 
 @dataclass(frozen=True)
