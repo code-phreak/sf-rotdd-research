@@ -577,6 +577,51 @@ def patch_text_at_offset(
     return decode_rotdd_bytes(original_bytes), replacement_bytes, final_output_path
 
 
+def patch_bytes_at_offset(
+    data: bytes,
+    source_path: Path,
+    rom_offset: int,
+    replacement_bytes: bytes,
+    output_path: Path | None,
+    overwrite: bool,
+    in_place: bool,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> tuple[bytes, bytes, Path]:
+    """
+    Patch raw bytes at a literal ROM offset while keeping the write bounded to
+    the exact replacement length.
+
+    This command is the generic binary counterpart to patch-text-at-offset.
+    It does not try to infer any codec or padding rules; it simply replaces the
+    bytes at the requested offset with the exact byte sequence provided by the
+    caller.
+    """
+
+    if not replacement_bytes:
+        raise ValueError("Replacement byte sequence cannot be empty.")
+
+    _report_progress(progress_callback, 0.0, "Reading target bytes")
+    end = rom_offset + len(replacement_bytes)
+    if end > len(data):
+        raise ValueError("Replacement extends beyond the end of the ROM.")
+
+    mutable = bytearray(data)
+    original_bytes = bytes(mutable[rom_offset:end])
+    _report_progress(progress_callback, 0.6, "Writing byte patch")
+    mutable[rom_offset:end] = replacement_bytes
+
+    final_output_path = resolve_patch_output_path(
+        source_path=source_path,
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+    )
+    final_output_path.parent.mkdir(parents=True, exist_ok=True)
+    final_output_path.write_bytes(mutable)
+    _report_progress(progress_callback, 1.0, "Patch complete")
+    return original_bytes, replacement_bytes, final_output_path
+
+
 def patch_text_surface_template_file(
     data: bytes,
     source_path: Path,

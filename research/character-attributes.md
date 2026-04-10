@@ -83,6 +83,156 @@ That keeps the edit small, visible, and easy to verify in both the CSV and the R
 
 When we move beyond names, this note can grow sections for class data, stats, growth, portrait references, battle flags, and other attributes with their own canonical sources.
 
+### Community-confirmed stat and spell notes
+
+A public GameFAQs stats topic for ROTDD gives us reliable gameplay rules, but not a verified persistent memory layout yet. It is useful for behavior and balance notes, not yet enough by itself to map a safe stat editor.
+
+Confirmed from that post:
+
+- the stats being tracked are HP, MP, Attack, Defense, and Speed
+- weapon choice affects Attack only in the poster's collected data
+- character-level samples were gathered at pre-promotion levels 5, 10, 15, and 20, plus post-promotion levels 1, 10, 15, 20, and 25
+- Gong learns `Heal2` at level 8, `Heal3` at 16, `Heal4` at `20/24`, and `Aura1` at `20/30`
+- Ken starts with `Spear`
+- Mae's base weapon is `Bronze Lance`
+- archers start from `Wooden Arrow`
+- `Steel Arrow`, `Elven Arrow`, `Armour Arrow`, and `Sniper` progress the archer line
+- `Handaxe`, `Middle Axe`, `Heat Axe`, and `Great Axe` are confirmed axe progression points for fighters like Gort and Luke
+
+The post also notes that Diana joins at level 6 and is close enough to Hans for a swap point, but that is a gameplay observation rather than a memory map.
+
+At the moment, this still does not identify a stable in-memory or save-file struct for character stats. We still need a verified persistent layout before we can safely build `character patch stat`.
+
+### Observed live-RAM stat layout
+
+The repo also contains a live-RAM stat map in `research/raw/ram_addresses.csv`. That map is more concrete than the legacy notes, but it still describes runtime memory rather than a verified persistent save layout.
+
+The current pattern looks like this:
+
+- each party member has a block of live RAM stat fields
+- matching stat fields are separated by a regular stride of `0x148` bytes between characters
+- the observed fields include:
+  - current HP
+  - max HP
+  - current MP
+  - max MP
+  - EX
+  - attack
+  - defend
+  - agility
+  - movement
+  - magic resistance
+
+For the first four party members, the current validation set is:
+
+Important correction:
+
+- the early starting-stat values we observed are not reliable fixed values
+- the game appears to assign or derive some of these values at first load, so recorded numbers should be treated as samples, not as anticipated constants
+- do not build future stat-edit assumptions on the exact boot-time numbers we happened to observe
+
+- `Max`
+  - Level 1
+  - Max HP 12
+  - Max MP 10
+  - EX 0
+  - Magic Resistance 6%
+  - Attack 11
+  - Defend 6
+  - Agility 4
+  - Movement 6
+  - Spells: `Egress`
+  - Equipped: `Short Sword`, `Steel Ring`
+  - Items: `None`
+  - Growth charts:
+    - HP = Type B
+    - MP = Type A
+    - Mag Res = Type C
+    - Attack = Type C
+    - Defend = Type C
+    - Agility = Type C
+- `Ken`
+  - Level 1
+  - Max HP 8
+  - Max MP 0
+  - EX 0
+  - Magic Resistance 0%
+  - Attack 14
+  - Defend 6
+  - Agility 5
+  - Movement 8
+  - Spells: `None`
+  - Equipped: `Spear`
+  - Items: `None`
+  - Growth charts:
+    - HP = Type D
+    - MP = Type ?
+    - Mag Res = Type ?
+    - Attack = Type B
+    - Defend = Type A
+    - Agility = Type B
+- `Tao`
+  - Level 1
+  - Max HP 10
+  - Max MP 7
+  - EX 0
+  - Magic Resistance 25%
+  - Attack 8
+  - Defend 4
+  - Agility 6
+  - Movement 5
+  - Spells: `Blaze`
+  - Equipped: `Wooden Staff`
+  - Items: `None`
+  - Growth charts:
+    - HP = Type B
+    - MP = Type C
+    - Mag Res = Type C
+    - Attack = Type B
+    - Defend = Type B
+    - Agility = Type B
+- `Hans`
+  - Level 1
+  - Max HP 12
+  - Max MP 0
+  - EX 0
+  - Magic Resistance 0%
+  - Attack 14
+  - Defend 4
+  - Agility 6
+  - Movement 5
+  - Spells: `None`
+  - Equipped: `Wooden Arrow`
+  - Items: `None`
+  - Growth charts:
+    - HP = Type A
+    - MP = Type ?
+    - Mag Res = Type ?
+    - Attack = Type A
+    - Defend = Type A
+    - Agility = Type C
+
+This gives us a good validation target for live stat reads and future save mapping, but it still is not enough on its own to build a persistent stat patcher.
+
+### Growth math and chart types
+
+The growth system still needs its own dedicated reverse-engineering pass.
+
+Current evidence says we have:
+
+- a table-driven growth path
+- a level-up increment path that is separate from the initial load path
+- growth chart types that influence how stat gains are rolled and applied
+
+What still needs to happen:
+
+- reverse engineer the level/increment growth math operations in a clean, reproducible way
+- identify the chart types used by the game
+- determine whether those chart types are directly editable from ROM
+- if they are editable, expose them through a conservative tool command rather than raw offsets
+
+The current Max level-up work already showed visible increments for HP, MP, Attack, Defense, and Speed, so the next phase should focus on labeling the growth chart mechanics rather than re-proving that growth exists.
+
 ## Class Names
 
 The currently confirmed class-name source is the first slice of the partial ROTDD text table around `0x0056F000`.

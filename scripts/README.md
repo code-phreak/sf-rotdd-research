@@ -9,6 +9,7 @@ The command-line wrapper now delegates to a package-backed implementation in `sr
 - `src/rotdd_tools/gba.py` holds generic GBA helpers
 - `src/rotdd_tools/rotdd.py` holds ROTDD-specific codec rules and known table coordinates
 - `src/rotdd_tools/catalog.py` turns known tables into structured exported data
+- `research/reverse-engineering-log.md` tracks the current stat and growth reverse-engineering trail
 - `scripts/rom_text_tools.py` stays as the stable entry point
 
 ## ROM path setup
@@ -38,6 +39,7 @@ If the file does not exist, is empty, is unreadable, or points to a ROM path tha
 - `dump-pointer-table` decodes a pointer table into strings.
 - `peek` prints a quick hex and ASCII view of a ROM region.
 - `patch-text-at-offset` patches one text run at a literal ROM offset, keeping the encoded text within the original byte budget when possible and repointing to EOF when a safe pointer target exists.
+- `patch-bytes-at-offset` patches raw bytes at a literal ROM offset using the exact hex bytes you provide.
 - `list-known-text` lists mapped rows from the known ROTDD text tables.
 - `patch-known-text` patches one mapped text entry in a copied ROM, keeping the encoded text within the original byte budget when possible and repointing to EOF when a safe pointer target exists.
 
@@ -50,6 +52,7 @@ All entity rename commands default to the conservative path. Longer replacements
 - `character list names` lists the canonical character names from the pointer table.
 - `character patch name <current> <replacement>` performs a case-sensitive global rename across the canonical name table, known mapped text rows, matching text-surface rows, and other whole-name ROTDD surface runs such as short menu labels.
 - `character patch file` applies many character renames from a CSV template with `current_name,replacement_name` columns.
+- `character patch stat <stat> Max <value>` patches one confirmed Max stat byte in the proof row we mapped from ROM.
 - Playable character names are conservatively capped at 8 ASCII characters, which is enough for the repointed-safe path we have evidence for right now.
 - When a replacement needs more room, the tool appends the new payload to the end of the copied ROM and rewrites the relevant pointer(s). That can grow the ROM image, so hardware or flashcart validation should confirm the target accepts the larger file.
 - Oversized replacement names fail fast before the broader rename scan starts.
@@ -121,14 +124,14 @@ Skipped-row reasons:
 - `--clear-refs-preference` removes the saved local preference
 - the broad EOF repoint path is still unstable and should be treated as a work-in-progress mechanism until the pointer rewrite rules are fully verified
 
-### Reserved Future Actions
+### Character Stat API
 
-- `character patch stat <stat> <target> <value>` is reserved for future character stat editing.
-- `class patch stat <stat> <target> <value>` is reserved for future class stat editing.
-- `enemy patch stat <stat> <target> <value>` is reserved for future enemy stat editing.
-- `item patch stat <stat> <target> <value>` is reserved for future item stat editing.
+- `character patch stat <stat> Max <value>` patches one confirmed Max stat byte in the proof row we mapped from ROM.
+- Supported Max stats are `Attack`, `Defense`, `Agility`, `Movement`, `Magic Resistance`, `Max HP`, and `Max MP`.
+- The current proof row also affected Max's default weapon at game start, so treat the row as a mixed init bundle until we split equipment bytes from stat bytes more cleanly.
+- `class patch stat <stat> <target> <value>`, `enemy patch stat <stat> <target> <value>`, and `item patch stat <stat> <target> <value>` remain reserved for later.
 - spell editing is planned next, with a future tree-style command surface that will sit beside the existing name and stat workflows.
-- These commands currently parse and then report that stat editing is not implemented yet.
+- Community stat notes give us gameplay breakpoints and likely level-up behavior, but we still need a verified persistent memory layout before broader stat editing can be generalized.
 
 Examples:
 
@@ -162,6 +165,9 @@ python scripts/rom_text_tools.py --rom path/to/your-rom.gba class patch name Kni
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba enemy patch name Goblin Ogre --output path/to/test-rom.gba
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba item patch name Healing Seed Remedy --output path/to/test-rom.gba
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba npc patch name Priest Oracle --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba patch-bytes-at-offset 0x001E0A34 20 --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba character patch stat Attack Max 99 --output path/to/test-rom.gba
+python scripts/rom_text_tools.py --rom path/to/your-rom.gba character patch stat "Max HP" Max 70 --output path/to/test-rom.gba
 python scripts/rom_text_tools.py character export template --output ignore/temp/character-names.template.csv
 python scripts/rom_text_tools.py --rom path/to/your-rom.gba character patch file --input ignore/temp/character-names.template.csv --output path/to/test-rom.gba
 python scripts/rom_text_tools.py text-surface export template --type unsorted
@@ -221,6 +227,12 @@ Prefer `--index` when possible. It is the safest selector when a table contains 
 - it prints a warning when it inserts line breaks for you, because the result should be reviewed on screen
 - it keeps wrapped lines tight and only pads the final encoded payload when needed to preserve the byte budget
 - if the wrapped text would need more than three visible rows on one page, the command fails instead of trying to overflow into other memory
+
+`patch-bytes-at-offset` is the generic binary counterpart.
+
+- pass the offset and one or more hex byte values as positional arguments
+- use it when you already know the exact byte sequence you want to write
+- the replacement is written exactly as supplied, so a one-byte proof patch is the safest first test
 
 Both write commands accept `--in-place` if you intentionally want to overwrite the source ROM. That is unsafe and should only be used when you have a backup copy.
 Use `<QUOTE>` inside replacement text when you need a double quote.

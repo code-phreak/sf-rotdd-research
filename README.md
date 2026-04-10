@@ -9,12 +9,15 @@ This repository is a public knowledge base and tooling project for reverse engin
 2. Pass `--rom` with a ROM copy, or let the script prompt for a local ROM path.
 3. For arbitrary text replacement, start with `patch-text-at-offset`.
 4. For larger text edits, export a two-column template from `research/raw/text-surfaces.csv` and patch it back with `text-surface export template` and `text-surface patch file`. If you do not pass `--refs rewrite` or `--refs keep`, the tool will explain the choice the first time, ask once, and remember your preference locally unless you clear it. Dialogue-like patches now reflow screen breaks from the updated text so renamed names can shift the surrounding lines naturally. `unsorted` rows have been reliable so far when the replacement stays the same length or shorter; multi-line template rewriting is still experimental, and the current broad EOF repoint behavior is still considered unstable until the pointer rewrite rules are fully verified.
+5. For arbitrary raw bytes, use `patch-bytes-at-offset`.
+6. For the confirmed Max proof row, use `character patch stat <stat> Max <value>`.
 
 Examples:
 
 ```powershell
 python scripts/rom_text_tools.py --rom path\to\your-rom.gba peek 0x00195F37 --length 0x80
 python scripts/rom_text_tools.py --rom path\to\your-rom.gba patch-text-at-offset 0x00195F37 "Mae: Hyaaah!" --output ignore\rom\test.gba
+python scripts/rom_text_tools.py --rom path\to\your-rom.gba patch-bytes-at-offset 0x001E0A34 20 --output ignore\rom\test-byte.gba
 python scripts/rom_text_tools.py text-surface export template --type unsorted
 python scripts/rom_text_tools.py --rom path\to\your-rom.gba text-surface patch file --input ignore\temp\text-surfaces.unsorted.csv --corpus research\raw\text-surfaces.csv --output ignore\rom\test-surfaces.gba
 python scripts/rom_text_tools.py --rom path\to\your-rom.gba text-surface patch file --input ignore\temp\text-surfaces.unsorted.csv --corpus research\raw\text-surfaces.csv --refs rewrite --output ignore\rom\test-surfaces.gba
@@ -23,6 +26,8 @@ python scripts/rom_text_tools.py --rom path\to\your-rom.gba class patch name Kni
 python scripts/rom_text_tools.py --rom path\to\your-rom.gba enemy patch name Goblin Ogre --output ignore\rom\test-goblin-ogre.gba
 python scripts/rom_text_tools.py --rom path\to\your-rom.gba item patch name Healing Seed Remedy --output ignore\rom\test-healing-seed-remedy.gba
 python scripts/rom_text_tools.py --rom path\to\your-rom.gba npc patch name Priest Oracle --output ignore\rom\test-priest-oracle.gba
+python scripts/rom_text_tools.py --rom path\to\your-rom.gba character patch stat Attack Max 99 --output ignore\rom\test-max-attack.gba
+python scripts/rom_text_tools.py --rom path\to\your-rom.gba character patch stat "Max HP" Max 70 --output ignore\rom\test-max-hp.gba
 ```
 
 If you do not want to type `--rom` every time, create `scripts/rom_path.local.txt` with a repository-relative ROM path. That file is ignored by Git and remains local.
@@ -52,6 +57,7 @@ The main folders and files to know about are:
 - [`research/raw/text-surfaces.csv`](./research/raw/text-surfaces.csv) for the broad dialogue/script corpus, with a `type` column that defaults to `unsorted` unless the current corpus review labels the row
 - [`ignore/temp/text-surfaces.unsorted.csv`](./ignore/temp/text-surfaces.unsorted.csv) for the editable two-column template exported from the current `unsorted` corpus rows
 - [`research/character-attributes.md`](./research/character-attributes.md) for character name and attribute notes
+- [`research/reverse-engineering-log.md`](./research/reverse-engineering-log.md) for the running reverse-engineering address and routine log
 - [`research/text-mechanics.md`](./research/text-mechanics.md) for the current text codec and wrapping rules
 - [`research/text-table-map.md`](./research/text-table-map.md) for the known table map
 - [`scripts/README.md`](./scripts/README.md) for command reference and examples
@@ -60,7 +66,7 @@ The main folders and files to know about are:
 
 ## Current Focus
 
-The current work is centered on story dialogue, broader text manipulation, conservative character-attribute editing, and laying the groundwork for spell editing.
+The current work is centered on story dialogue, broader text manipulation, conservative character-attribute editing, and a first-class Max stat patch workflow that follows the same tree-style command shape as the name APIs.
 
 Current confirmed leads:
 
@@ -83,7 +89,10 @@ Current confirmed leads:
 - item names can be renamed safely with `item patch name <current> <replacement>`
 - NPC-speaker names can be browsed with `npc list names`
 - NPC-speaker names can be renamed safely with `npc patch name <current> <replacement>`
+- Max stat bytes can be patched with `character patch stat <stat> Max <value>`
+- the current proof row also appears to touch equipment data, so Max stat tests should stay on copied ROMs until the stat and equipment bytes are cleanly separated
 - arbitrary ROM offsets can be patched with `patch-text-at-offset`
+- arbitrary raw byte sequences can be patched with `patch-bytes-at-offset`
 - additional ROTDD-style text runs can be scanned with `scan-rotdd-runs`
 - the dialogue codec currently supports punctuation, control tags, visible digits, and whole-name replacements in a CSV-friendly format
 - the dialogue box is currently treated as a 32-character wide, 3-row surface for automatic wrapping
@@ -99,6 +108,8 @@ Current confirmed leads:
 `npc patch name <current> <replacement>` is the matching command for dialogue-speaker prefixes extracted from the corpus. It uses the same conservative rename rules and whole-name matching behavior, but it starts from dialogue text instead of a pointer table.
 
 Each entity workflow also supports `export template` and `patch file` for bulk edits from a CSV template. The template file uses `current_name,replacement_name`, and the fixed-length entity commands reject oversized names before they start scanning for matches.
+
+`character patch stat <stat> Max <value>` is the first tree-style stat-edit command. It writes a confirmed Max stat byte from the proof row we mapped in ROM, and it currently supports `Attack`, `Defense`, `Agility`, `Movement`, `Magic Resistance`, `Max HP`, and `Max MP`. The current proof row also affected Max's default equipment at game start, so keep testing on a copied ROM until we separate stat bytes from equipment bytes more cleanly.
 
 All entity rename commands default to the conservative path. Longer replacements append to the end of the copied ROM and repoint the relevant table entry when possible. `liberal` is intentionally unsafe and may fall back to direct in-place writes when a reference would otherwise be skipped.
 
@@ -138,6 +149,7 @@ python scripts/rom_text_tools.py --rom path\to\your-rom.gba patch-text-at-offset
 - broad template repointing is still unstable until we finish verifying which pointer references are safe to rewrite
 - both write commands accept `--in-place` if you intentionally want to overwrite the source ROM
 - `--in-place` is unsafe and should only be used when you have a backup copy
+- the current Max proof row is edited through `character patch stat <stat> Max <value>` and can also affect starting equipment, so use a copied ROM while testing
 - duplicate live names are rejected when a rename would create a collision
 - playable character-name replacements are currently capped at 8 ASCII characters, which is enough for the current rename workflow and appended repoint path
 - the skip output lists every skipped row with short reason labels such as `too long for slot`, `no pointer table`, and `name collision`

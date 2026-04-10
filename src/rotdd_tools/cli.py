@@ -41,6 +41,7 @@ from .editing import (
     patch_item_name_everywhere,
     patch_known_text,
     patch_npc_name_everywhere,
+    patch_bytes_at_offset,
     patch_text_at_offset,
     patch_text_surface_template_file,
     resolve_patch_output_path,
@@ -59,6 +60,36 @@ from .rotdd import (
 def parse_int(value: str) -> int:
     """Accept plain decimal or Python-style base-prefixed integers."""
     return int(value, 0)
+
+
+def parse_hex_bytes(*parts: str) -> bytes:
+    """Parse a user-supplied byte string into raw bytes."""
+
+    text = " ".join(parts).replace("0x", "").replace("0X", "")
+    try:
+        data = bytes.fromhex(text)
+    except ValueError as exc:
+        raise ValueError(f"Could not parse hex bytes: {' '.join(parts)}") from exc
+    if not data:
+        raise ValueError("Hex byte sequence cannot be empty.")
+    return data
+
+
+def normalize_stat_name(value: str) -> str:
+    """Normalize a stat label so the tree command accepts light punctuation differences."""
+
+    return " ".join(value.lower().replace("_", " ").replace("-", " ").split())
+
+
+MAX_CHARACTER_STAT_PATCHES: dict[str, tuple[str, int]] = {
+    "attack": ("Attack", 0x001E0A34),
+    "defense": ("Defense", 0x001E0A35),
+    "agility": ("Agility", 0x001E0A36),
+    "movement": ("Movement", 0x001E0A37),
+    "magic resistance": ("Magic Resistance", 0x001E0A39),
+    "max hp": ("Max HP", 0x001E0A3A),
+    "max mp": ("Max MP", 0x001E0A3B),
+}
 
 
 def load_rom(path: Path) -> bytes:
@@ -384,11 +415,14 @@ def _add_entity_tree_parser(
     if allow_stat:
         patch_stat_parser = patch_subparsers.add_parser(
             "stat",
-            help=f"Reserved future stat-edit command for {display_name} entities.",
+            help="Patch a Max stat in the confirmed proof row.",
         )
-        patch_stat_parser.add_argument("stat_name", help="Stat name to edit.")
-        patch_stat_parser.add_argument("target_name", help=f"Existing {display_name} name to modify.")
-        patch_stat_parser.add_argument("value", help="Replacement numeric value or text value.")
+        patch_stat_parser.add_argument("stat_name", help="Stat name to edit, such as Attack or Max HP.")
+        patch_stat_parser.add_argument(
+            "target_name",
+            help="Existing character name to modify. Max is supported for the current proof row.",
+        )
+        patch_stat_parser.add_argument("value", help="Replacement numeric value.")
         _add_write_args(patch_stat_parser)
 
 
@@ -398,7 +432,7 @@ def _entity_patch_is_progress_command(args: argparse.Namespace) -> bool:
     return (
         args.command in {"character", "class", "enemy", "item", "npc"}
         and getattr(args, "action", None) == "patch"
-        and getattr(args, "target", None) in {"name", "file"}
+        and getattr(args, "target", None) in {"name", "file", "stat"}
     )
 
 
@@ -1347,6 +1381,58 @@ def run_patch_text_at_offset(
     ]
 
 
+def run_patch_character_stat(
+    data: bytes,
+    rom_path: Path,
+    stat_name: str,
+    target_name: str,
+    value: str,
+    output: Path | None,
+    overwrite: bool,
+    in_place: bool,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[str]:
+    """Patch one confirmed Max stat byte from the current ROM proof row."""
+
+    if normalize_stat_name(target_name) != "max":
+        raise ValueError("The current character stat patch command only supports Max.")
+
+    normalized_stat_name = normalize_stat_name(stat_name)
+    try:
+        display_stat_name, rom_offset = MAX_CHARACTER_STAT_PATCHES[normalized_stat_name]
+    except KeyError as exc:
+        available = ", ".join(entry[0] for entry in MAX_CHARACTER_STAT_PATCHES.values())
+        raise ValueError(f"Unknown Max stat name: {stat_name!r}. Supported stats: {available}.") from exc
+
+    replacement_value = parse_int(value)
+    if replacement_value < 0 or replacement_value > 0xFF:
+        raise ValueError("Stat values must fit in one byte (0 to 255).")
+
+    output_path = None
+    if output is not None:
+        output_path = output if output.is_absolute() else (REPO_ROOT / output)
+
+    original_bytes, patched_bytes, final_output_path = patch_bytes_at_offset(
+        data=data,
+        source_path=rom_path,
+        rom_offset=rom_offset,
+        replacement_bytes=bytes([replacement_value]),
+        output_path=output_path,
+        overwrite=overwrite,
+        in_place=in_place,
+        progress_callback=progress_callback,
+    )
+
+    return [
+        "Character stat: Max",
+        f"Stat name: {display_stat_name}",
+        f"ROM offset: 0x{rom_offset:08X}",
+        f"Original byte: {' '.join(f'{byte:02X}' for byte in original_bytes)}",
+        f"Replacement byte: {' '.join(f'{byte:02X}' for byte in patched_bytes)}",
+        f"Patched source ROM in place: {final_output_path}" if in_place else f"Wrote patched ROM: {final_output_path}",
+    ]
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the command-line parser."""
     parser = argparse.ArgumentParser(description="Probe ROM text and pointer structures.")
@@ -1728,6 +1814,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write directly into the source ROM. Unsafe.",
     )
 
+    patch_bytes_parser = subparsers.add_parser(
+        "patch-bytes-at-offset",
+        help="Patch raw bytes at a literal ROM offset.",
+    )
+    patch_bytes_parser.add_argument(
+        "offset",
+        type=parse_int,
+        help="Literal ROM offset to patch.",
+    )
+    patch_bytes_parser.add_argument(
+        "replacement",
+        nargs="+",
+        help="Replacement bytes written as hex pairs, for example: 20 or 00 01 FF.",
+    )
+    patch_bytes_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Patched ROM path. Defaults to a sibling file ending in .patched.gba.",
+    )
+    patch_bytes_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow the output file to be overwritten if it already exists.",
+    )
+    patch_bytes_parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Write directly into the source ROM. Unsafe.",
+    )
+
     peek_parser = subparsers.add_parser("peek", help="Hex and ASCII preview of a ROM region.")
     peek_parser.add_argument("offset", type=parse_int, help="ROM offset to preview.")
     peek_parser.add_argument("--length", type=parse_int, default=0x80, help="Number of bytes to print.")
@@ -1744,6 +1860,7 @@ def main() -> int:
         "export-text-surface-corpus",
         "patch-known-text",
         "patch-text-at-offset",
+        "patch-bytes-at-offset",
     }
     progress_bar = ProgressBar() if args.command in progress_commands or _entity_patch_is_progress_command(args) or (args.command == "text-surface" and getattr(args, "action", None) == "patch" and getattr(args, "target", None) == "file") else None
     progress_callback = progress_bar.update if progress_bar is not None else None
@@ -1859,7 +1976,21 @@ def main() -> int:
                 post_messages.append(fresh_boot_notice())
                 return 0
             if args.action == "patch" and args.target == "stat":
-                parser.error("Stat editing is not implemented yet.")
+                if args.command != "character":
+                    parser.error(f"Stat editing is only implemented for character Max rows for now, not {args.command}.")
+                post_messages.extend(run_patch_character_stat(
+                    data=data,
+                    rom_path=rom_path,
+                    stat_name=args.stat_name,
+                    target_name=args.target_name,
+                    value=args.value,
+                    output=args.output,
+                    overwrite=args.overwrite,
+                    in_place=args.in_place,
+                    progress_callback=progress_callback,
+                ))
+                post_messages.append(fresh_boot_notice())
+                return 0
             parser.error(f"Unhandled {args.command} action: {args.action}/{getattr(args, 'target', None)}")
         if args.command == "patch-text-at-offset":
             post_messages.extend(run_patch_text_at_offset(
@@ -1872,6 +2003,23 @@ def main() -> int:
                 in_place=args.in_place,
                 progress_callback=progress_callback,
             ))
+            post_messages.append(fresh_boot_notice())
+            return 0
+        if args.command == "patch-bytes-at-offset":
+            replacement_bytes = parse_hex_bytes(*args.replacement)
+            original_bytes, patched_bytes, final_output_path = patch_bytes_at_offset(
+                data=data,
+                source_path=rom_path,
+                rom_offset=args.offset,
+                replacement_bytes=replacement_bytes,
+                output_path=args.output,
+                overwrite=args.overwrite,
+                in_place=args.in_place,
+                progress_callback=progress_callback,
+            )
+            print(f"Original bytes at {args.offset:#010x}: {' '.join(f'{byte:02X}' for byte in original_bytes)}")
+            print(f"Replacement bytes: {' '.join(f'{byte:02X}' for byte in patched_bytes)}")
+            print(f"Patched ROM written to: {final_output_path}")
             post_messages.append(fresh_boot_notice())
             return 0
         if args.command == "peek":
